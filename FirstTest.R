@@ -1,12 +1,25 @@
+rm(list=ls())
 library(sbm)
 source('utils.R')
-nbNodes <- 
+
 blockProp <- list(c(.5, .5), c(1/3, 1/3, 1/3)) # group proportions
 blockProp2 <- list(c(.3, .7), c(0.5, 0.5,0.000001))
+names(blockProp) <- names(blockProp2) <- c('row','col')
 seed  <- 14579
 set.seed(seed)
 means <- matrix(runif(6), 2, 3)  # connectivity matrix
 connectParam <- list(mean = round(means,2))
+
+# reorder 
+oCol <- order(colSums(connectParam$mean[,]),decreasing = TRUE)
+oRow <- order(rowSums(connectParam$mean[,]),decreasing = TRUE)
+connectParam$mean <- connectParam$mean[oRow,oCol]
+blockProp$row <- blockProp$row[oRow]
+blockProp$col <- blockProp$col[oCol]
+blockProp2$row <- blockProp2$row[oRow]
+blockProp2$col <- blockProp2$col[oCol]
+
+
 mySampler1 <- sampleBipartiteSBM(nbNodes = c(60, 80),  blockProp,  connectParam)
 mySampler2 <- sampleBipartiteSBM(nbNodes = c(50, 100), blockProp2, connectParam)
 
@@ -36,6 +49,8 @@ priorParam$blockProp <- list()
 priorParam$blockProp$row = matrix(1/KRow,M,KRow) ### Jeffreys dirichlet prior the pi^m and rho^m
 priorParam$blockProp$col = matrix(1/KCol,M,KCol)
 
+
+
 ############ Post  
 postParam <- priorParam 
 postParam$blockProp$row = matrix(NA,M,KRow)
@@ -58,19 +73,20 @@ collecTau <- lapply(initBipartite,function(m){
   return(tau)
   })
  
-postParamInit <- Mstep(collecNetwork,M, nRow,nCol,collecTau,priorParam)
 
+
+estimOptions <- list(maxIterVB = 100,
+                     maxIterVE = 100,
+                     valStopCritVE = 10^-5,
+                     valStopCritVB = 10^-5)
 
 noConvergence <- 0;
-maxIterVB <- 100
-maxIterVE <- 100
 iterVB <- 0
 stopVB <- 0 
-valStopCritVE <- 10^-5
-valStopCritVB <- 10^-5
+
 postParam<- postParamInit
 
-while (iterVB < maxIterVB & stopVB == 0){
+while (iterVB < estimOptions$maxIterVB & stopVB == 0){
   
   iterVB  <- iterVB  + 1
   postParamOld <- postParam
@@ -110,7 +126,7 @@ while (iterVB < maxIterVB & stopVB == 0){
   }### end VE
   
   ###### VB M step
-  postParam<- Mstep(collecNetwork,M, nRow,nCol,collecTau,priorParam)
+  postParam<- Mstep(collecNetwork,M, nRow,nCol,collecTau,priorParam, distri = 'Bernoulli')
    
   #end  VB M step
   #-------stop criteria
@@ -119,4 +135,25 @@ while (iterVB < maxIterVB & stopVB == 0){
   print(c(iterVB,deltaPostParam))
 }
     
+
+muPost <-   postParam$connectParam$alpha/(postParam$connectParam$beta + postParam$connectParam$alpha)
+oCol <- order(colSums(muPost),decreasing = TRUE)
+oRow <- order(rowSums(muPost),decreasing = TRUE)
+postParam$connectParam$alpha <-postParam$connectParam$alpha[oRow,oCol]
+postParam$connectParam$beta <-postParam$connectParam$beta[oRow,oCol]
+
+postParam$blockProp$row <- postParam$blockProp$row[,oRow]
+postParam$blockProp$cow <- postParam$blockProp$cow[,oCol]
+
+muPost <-   postParam$connectParam$alpha/(postParam$connectParam$beta + postParam$connectParam$alpha)
+
+############## Plot post 
+par(mfrow = c(KRow,KCol))
+for (k in 1:KRow){
+  for (l in 1:KCol){
+  curve(dbeta(x,postParam$connectParam$alpha[k,l],postParam$connectParam$beta[k,l]),ylab = 'post')
+  abline(v=connectParam$mean[k,l],col='red')
+  abline(v=muPost[k,l],col='green')
+  }
+}
   

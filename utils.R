@@ -10,10 +10,10 @@ normByRow <- function(Mat){
 fromBtoTau <- function(B,eps = 10^-5){
   B <- B - matrix(apply(B,1,max),nrow = nrow(B),ncol = ncol(B),byrow = FALSE)
   temp <- exp(B)
-  temp2 <- scaleByRow(temp)
+  temp2 <- normByRow(temp)
   temp2[temp2 < eps] <- eps
   temp2[temp2 > (1 - eps)] <- 1 - eps
-  Tau <- scaleByRow(temp2)
+  Tau <- normByRow(temp2)
   attr(Tau,"scaled:scale")<- NULL
   return(Tau)
 }
@@ -42,21 +42,3 @@ distPostParam = function(PostParam,PostParamOld){
 }
 
 
-####################" MSTEP from CollecTau to postParam
-
-Mstep <- function(collecNetwork,M, nRow,nCol,collecTau,priorParam){
-  
-  postParam <- priorParam
-  S <- lapply(1:M,function(m){t(collecTau[[m]]$row) %*% matrix(1,nRow[m],nCol[m]) %*% collecTau[[m]]$col})
-  SY <- lapply(1:M,function(m){t(collecTau[[m]]$row) %*% collecNetwork[[m]] %*% collecTau[[m]]$col})
-  postParam$connectParam$alpha  <- priorParam$connectParam$alpha +  Reduce(`+`, SY)
-  postParam$connectParam$beta  <- priorParam$connectParam$beta +   Reduce(`+`, S) - Reduce(`+`, SY)
-  
-  Rtau <-  t(sapply(1:M,function(m){colSums(collecTau[[m]]$row)}))
-  Ctau <-  t(sapply(1:M,function(m){colSums(collecTau[[m]]$col)}))
-  
-  postParam$blockProp$row  <- priorParam$blockProp$row + Rtau
-  postParam$blockProp$col  <- priorParam$blockProp$col + Ctau
-  
-  return(postParam)
-}
