@@ -1,11 +1,14 @@
-VBEMBipartiteColSBM = function(collecNetwork,priorParam,collecTau,estimOptions)
+VBEMBipartiteColSBM = function(collecNetwork,priorParam,collecTau,estimOptions, model){
 
   
-  estimOptions <- list(maxIterVB = 100,
-                     maxIterVE = 100,
-                     valStopCritVE = 10^-5,
-                     valStopCritVB = 10^-5)
+  if(is.null(estimOptions)){
+    estimOptions <- list(maxIterVB = 100,
+                        maxIterVE = 100,
+                        valStopCritVE = 10^-5,
+                        valStopCritVB = 10^-5)
+  } 
 
+  
   
   
   M <- length(collecNetwork)
@@ -28,17 +31,22 @@ VBEMBipartiteColSBM = function(collecNetwork,priorParam,collecTau,estimOptions)
     postParamOld <- postParam
   
     ##--------------- VE step
-    res_Estp <- EStep(collecNetwork,M, nRow,nCol,KRow,KCol,collecTau,postParam,estimOptions,model)
-    collecTau <- res_Estp$collecTau
+    res_Estep <- Estep(collecNetwork,M, nRow,nCol,KRow,KCol,collecTau,postParam,estimOptions,model)
+    collecTau <- res_Estep$collecTau
     #----- end  VB M step
     
     ##--------------- VB step
-    postParam <- MStep(collecNetwork,M, nRow,nCol,collecTau,priorParam, distri = 'Bernoulli')
+    postParam <- Mstep(collecNetwork,M, nRow,nCol,collecTau,priorParam, model)
     #----- end  VB M step
     
     ##-------------- stop criteria
-    if (distPostParam(postParam,postParamOld) < valStopCritVB) {stopVB <- 1}
-    print(c(iterVB,deltaPostParam))
+    if (distPostParam(postParam,postParamOld) < estimOptions$valStopCritVB) {stopVB <- 1}
+    print(iterVB)
+  }
+  
+  return(reorderBlocks(postParam, collecTau))
+    
+
 }
 
 
@@ -106,7 +114,7 @@ Estep <- function(collecNetwork,M, nRow,nCol,KRow,KCol,collecTau,postParam,estim
         if(model=='bernoulli'){
           lY_m <-  t(collecNetwork[[m]])  %*% tcrossprod(collecTau[[m]]$row,t(DiGAlpha- DiGAlphaBeta))  + t(1-collecNetwork[[m]]) %*% tcrossprod(collecTau[[m]]$row,t(DiGBeta- DiGAlphaBeta))
         }
-        l3_m  <- matrix(DiblockProp_m_row,nrow = nCol[m],ncol = KCol,byrow = TRUE)
+        l3_m  <- matrix(DiblockProp_m_col,nrow = nCol[m],ncol = KCol,byrow = TRUE)
         collecTau[[m]]$col <- fromBtoTau(lY_m + l3_m) 
       }
     }
@@ -114,7 +122,7 @@ Estep <- function(collecNetwork,M, nRow,nCol,KRow,KCol,collecTau,postParam,estim
     deltaTau <- distTau(collecTau,collecTauOld)
     if (deltaTau < estimOptions$valStopCritVE) {stopVE <- 1}
     iterVE <- iterVE + 1
-    if(iterVE  == maxIterVE){noConvergence = 1}
+    noConvergence <- 1*(iterVE  == estimOptions$maxIterVE)
   }
   
   return(list(collecTau = collecTau,noConvergence  = noConvergence))

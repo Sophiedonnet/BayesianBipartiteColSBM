@@ -1,139 +1,155 @@
 rm(list=ls())
 library(sbm)
 source('utils.R')
+source('VBEMBipartiteColSBM.R')
+library(gtools)
 
-blockProp <- list(c(.5, .5), c(1/3, 1/3, 1/3)) # group proportions
-blockProp2 <- list(c(.3, .7), c(0.5, 0.5,0.000001))
-names(blockProp) <- names(blockProp2) <- c('row','col')
+
+
 seed  <- 14579
 set.seed(seed)
-means <- matrix(runif(6), 2, 3)  # connectivity matrix
-connectParam <- list(mean = round(means,2))
 
-# reorder 
+
+M = 6
+KRow = 4
+KCol = 3
+
+
+########### block proportions
+blockProp <- list()
+blockProp$row <-  rdirichlet(M,rep(1/(KRow-1),KRow)) 
+blockProp$col <- rdirichlet(M,rep(1/(KCol-1),KCol))
+
+blockProp$row[1,] <- rep(1/KRow,KRow) 
+blockProp$col[1,] <- rep(1/KCol,KCol)
+
+print(blockProp)
+
+############## connectivity matrix
+means <- matrix(rbeta(KRow*KCol,1/1.1,1/1.1), KRow, KCol)  
+connectParam <- list(mean = round(means,2))
 oCol <- order(colSums(connectParam$mean[,]),decreasing = TRUE)
 oRow <- order(rowSums(connectParam$mean[,]),decreasing = TRUE)
 connectParam$mean <- connectParam$mean[oRow,oCol]
-blockProp$row <- blockProp$row[oRow]
-blockProp$col <- blockProp$col[oCol]
-blockProp2$row <- blockProp2$row[oRow]
-blockProp2$col <- blockProp2$col[oCol]
 
 
-mySampler1 <- sampleBipartiteSBM(nbNodes = c(60, 80),  blockProp,  connectParam)
-mySampler2 <- sampleBipartiteSBM(nbNodes = c(50, 100), blockProp2, connectParam)
+########### sizes of networks
+nbNodes <- matrix(sample(10*c(6:10),M*2,replace = TRUE),M,2)
 
 
+############################################################
+##################################"""""""" SIMULATION
+############################################################
 
 
-
-
-##################"DATA
-collecNetwork <- list()
-collecNetwork[[1]] <- mySampler1$networkData
-collecNetwork[[2]] <- mySampler2$networkData
-
-# from data
-M <- length(collecNetwork)
-nRow <- sapply(collecNetwork,function(m){nrow(m)})
-nCol <- sapply(collecNetwork,function(m){ncol(m)})
-
-########## MODEL and prior
-KRow <- 2 
-KCol <- 3
-priorParam <- list()
-priorParam$connectParam<- list()
-priorParam$connectParam$alpha <- matrix(1,KRow,KCol) ### Uniform prior on the alpha_{kl}
-priorParam$connectParam$beta <- matrix(1,KRow,KCol)
-priorParam$blockProp <- list()
-priorParam$blockProp$row = matrix(1/KRow,M,KRow) ### Jeffreys dirichlet prior the pi^m and rho^m
-priorParam$blockProp$col = matrix(1/KCol,M,KCol)
+mySampler <- lapply(1:M, function(m){sampleBipartiteSBM(nbNodes = nbNodes[m,],  list(row=blockProp$row[m,],col=blockProp$col[m,]),  connectParam)})
+collecNetwork <- lapply(mySampler,function(l){l$networkData})
 
 
 
-############ Post  
-postParam <- priorParam 
-postParam$blockProp$row = matrix(NA,M,KRow)
-postParam$blockProp$col = matrix(NA,M,KCol)
-postParam$connectParam$alpha <- matrix(NA,KRow,KCol)
-postParam$connectParam$beta <- matrix(NA,KRow,KCol)
 
 
 ############### init Tau
 
 initBipartite <- lapply(collecNetwork,estimateBipartiteSBM)
-# Init tau 
-collecTau <- lapply(initBipartite,function(m){
-  eps  <-  10^-5
-  tau <- m$probMemberships
-  kr <- ncol(tau$row)
-  if(kr < KRow){tau$row = cbind(tau$row,matrix(eps,nrow(tau$row),KRow-kr)); tau$row =normByRow(tau$row) }
-  kc <- ncol(tau$col)
-  if(kc < KCol){tau$col = cbind(tau$col,matrix(eps,nrow(tau$col),KCol-kc));tau$col =normByRow(tau$col) }
-  return(tau)
-  })
- 
 
 
-estimOptions <- list(maxIterVB = 100,
+
+
+
+
+
+
+
+initBipartite[[1]]$nbBlocks
+
+###################### Estim avec Kcol Krow true
+
+
+estimOptions <- list(maxIterVB = 1000,
                      maxIterVE = 100,
                      valStopCritVE = 10^-5,
                      valStopCritVB = 10^-5)
 
-noConvergence <- 0;
-iterVB <- 0
-stopVB <- 0 
 
-postParam<- postParamInit
+KRowEstim <- initBipartite[[1]]$nbBlocks[1]
+KColEstim <- initBipartite[[1]]$nbBlocks[2]
 
-while (iterVB < estimOptions$maxIterVB & stopVB == 0){
-  
-  iterVB  <- iterVB  + 1
-  postParamOld <- postParam
-  
-  ############### #VE step
+#   Making the groups correspond between networks
 
-  iterVE <- 0
-  stopVE <- 0
-  while ((iterVE < maxIterVE) & (stopVE == 0)){
-    collecTauOld <- collecTau #useful ?
-    if(KRow == 1){for (m in 1:M){collecTau[[m]]$row <-  matrix(1,ncol  = 1,nrow = nRow[m])}}
-    if(KCol == 1){for (m in 1:M){collecTau[[m]]$col <-  matrix(1,ncol  = 1,nrow = nCol[m])}}
-    if((KCol>0) | (KRow>1)){
-      ## useful quantities
-      DiGAlpha <- digamma(postParam$connectParam$alpha) 
-      DiGBeta <- digamma(postParam$connectParam$beta) 
-      DiGAlphaBeta  <- digamma(postParam$connectParam$beta + postParam$connectParam$alpha) 
-      for(m in 1:M){
-        DiblockProp_m_col <- digamma(postParam$blockProp$col[m,]) - digamma(sum(postParam$blockProp$col[m,]))
-        DiblockProp_m_row <- digamma(postParam$blockProp$row[m,]) - digamma(sum(postParam$blockProp$row[m,]))
-        # row
-        l1_m  <- collecNetwork[[m]] %*% tcrossprod(collecTau[[m]]$col,DiGAlpha- DiGAlphaBeta) 
-        l2_m  <- (1-collecNetwork[[m]]) %*% tcrossprod(collecTau[[m]]$col,DiGBeta- DiGAlphaBeta)
-        l3_m  <- matrix(DiblockProp_m_row,nrow = nRow[m],ncol = KRow,byrow = TRUE)
-        collecTau[[m]]$row <- fromBtoTau(l1_m + l2_m + l3_m) 
-        # col 
-        l1_m  <-  t(collecNetwork[[m]])  %*% tcrossprod(collecTau[[m]]$row,t(DiGAlpha- DiGAlphaBeta))  
-        l2_m  <- t(1-collecNetwork[[m]]) %*% tcrossprod(collecTau[[m]]$row,t(DiGBeta- DiGAlphaBeta))
-        l3_m  <- matrix(DiblockProp_m_row,nrow = nCol[m],ncol = KCol,byrow = TRUE)
-        collecTau[[m]]$col <- fromBtoTau(l1_m + l2_m + l3_m) 
+collecTau <- lapply(1:M,function(m){
+    eps  <-  10^-5
+    alpha_1 <- initBipartite[[1]]$connectParam$mean
+    KRowEstim_1 <- nrow(alpha_1)
+    KColEstim_1 <- ncol(alpha_1)
+    
+    alpha_m <- initBipartite[[m]]$connectParam$mean
+    Perm_row <- permutations(KRowEstim_1,nrow(alpha_m))
+    Perm_col <- permutations(KColEstim_1,ncol(alpha_m))
+    score  = Inf
+    for (i in 1:nrow(Perm_row)){
+      for (j in 1:nrow(Perm_col)){
+        score_new = sum((alpha_1[Perm_row[i,],Perm_col[j,]] - alpha_m)^2)
+        if (score_new < score){
+          best_perm_row <- Perm_row[i,]
+          best_perm_col <- Perm_col[j,]
+          score <- score_new
         }
-    deltaTau <- distTau(collecTau,collecTauOld)
-    if (deltaTau < valStopCritVE) {stopVE <- 1}
-    iterVE <- iterVE + 1
-    if(iterVE  == maxIterVE){noConvergence = 1}
+      }
     }
-  }### end VE
-  
-  ###### VB M step
-  postParam<- Mstep(collecNetwork,M, nRow,nCol,collecTau,priorParam, distri = 'Bernoulli')
-   
-  #end  VB M step
-  #-------stop criteria
-  deltaPostParam <- distPostParam(postParam,postParamOld)
-  if (deltaPostParam < valStopCritVB) {stopVB <- 1}
-  print(c(iterVB,deltaPostParam))
+  tau_m <- list()
+  tau_m$row <- matrix(eps,nbNodes[m,1],KRowEstim_1)
+  tau_m$row[ , best_perm_row] = initBipartite[[m]]$probMemberships$row
+  tau_m$row <- normByRow(tau_m$row)
+  tau_m$col <- matrix(eps,nbNodes[m,2],KColEstim_1)
+  tau_m$col[ , best_perm_col] = initBipartite[[m]]$probMemberships$col
+  tau_m$col <- normByRow(tau_m$col)
+  return(tau_m)}
+)
+
+
+
+
+
+
+priorParam <- setPriorParam(M,KRowEstim,KColEstim,model ='bernoulli')
+resEstim  <- VBEMBipartiteColSBM(collecNetwork,priorParam,collecTau,estimOptions,model  ='bernoulli')
+logLikMarg <- computeLogLikMarg(collecNetwork, resEstim$collecTau,priorParam,model = 'bernoulli')
+
+
+postMeanEstim <- list()
+postMeanEstim$connectParam <- resEstim$postParam$connectParam$alpha/(resEstim$postParam$connectParam$alpha + resEstim$postParam$connectParam$beta)
+postMeanEstim$blockProp <- lapply(resEstim$postParam$blockProp,function(l){normByRow(l)}) 
+postMemberships <- lapply(collecTau,function(tau){
+  Z <- list()
+  Z$row <- apply(tau$row,1,which.max)
+  Z$col <- apply(tau$col,1,which.max)
+  return(Z)
+  })
+
+
+lapply(1:M,function(m){table(postMemberships[[m]]$row,mySampler[[m]]$memberships$row)})
+
+lapply(1:M,function(m){table(postMemberships[[m]]$col,mySampler[[m]]$memberships$col)})
+
+ 
+################ sepSBM 
+
+
+logLikMarg_sep <- matrix(0,M,2)
+for (m in 1:M){
+  print(paste0('Network ',m))
+  KRow_m <- initBipartite[[m]]$nbBlocks[1]
+  KCol_m <- initBipartite[[m]]$nbBlocks[2]
+  tau_m <- initBipartite[[m]]$probMemberships
+  priorParam_m <- setPriorParam(1, KRow_m,KCol_m,model ='bernoulli')
+  resEstim_m  <- VBEMBipartiteColSBM(list(collecNetwork[[m]]),priorParam_m,list(tau_m),estimOptions,model  ='bernoulli')
+  logLikMarg_sep[m,] <-  computeLogLikMarg(list(collecNetwork[[m]]), list(tau_m),priorParam_m,model = 'bernoulli')
 }
+
+
+
+cbind(sum(logLikMarg),sum(logLikMarg_sep))
     
 
 muPost <-   postParam$connectParam$alpha/(postParam$connectParam$beta + postParam$connectParam$alpha)
