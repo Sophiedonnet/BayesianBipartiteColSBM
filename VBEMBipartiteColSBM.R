@@ -1,4 +1,4 @@
-VBEMBipartiteColSBM = function(collecNetwork,priorParam,collecTau,estimOptions, model){
+VBEMBipartiteColSBM = function(collecNetwork,priorParam,collecTau,estimOptions, emissionDist, model ){
 
   
   if(is.null(estimOptions)){
@@ -14,12 +14,12 @@ VBEMBipartiteColSBM = function(collecNetwork,priorParam,collecTau,estimOptions, 
   M <- length(collecNetwork)
   nRow <- sapply(collecNetwork,function(X)(nrow(X)))
   nCol <- sapply(collecNetwork,function(X)(ncol(X)))
-  KRow <-ncol(priorParam$blockProp$row)
-  KCol <-ncol(priorParam$blockProp$col)
-  
+
+  KRow <-nrow(priorParam$connectParam$alpha)
+  KCol <-ncol(priorParam$connectParam$alpha)
   
   #-------------------- initialisation
-  postParam <- Mstep(collecNetwork,M, nRow,nCol,collecTau,priorParam)
+  postParam <- Mstep(collecNetwork,M, nRow,nCol,collecTau,priorParam, emissionDist, model)
   noConvergence <- 0;
   iterVB <- 0
   stopVB <- 0 
@@ -31,12 +31,12 @@ VBEMBipartiteColSBM = function(collecNetwork,priorParam,collecTau,estimOptions, 
     postParamOld <- postParam
   
     ##--------------- VE step
-    res_Estep <- Estep(collecNetwork,M, nRow,nCol,KRow,KCol,collecTau,postParam,estimOptions,model)
+    res_Estep <- Estep(collecNetwork,M, nRow,nCol,KRow,KCol,collecTau,postParam,estimOptions,emissionDist, model)
     collecTau <- res_Estep$collecTau
     #----- end  VB M step
     
     ##--------------- VB step
-    postParam <- Mstep(collecNetwork,M, nRow,nCol,collecTau,priorParam, model)
+    postParam <- Mstep(collecNetwork,M, nRow,nCol,collecTau,priorParam, emissionDist, model)
     #----- end  VB M step
     
     ##-------------- stop criteria
@@ -44,7 +44,7 @@ VBEMBipartiteColSBM = function(collecNetwork,priorParam,collecTau,estimOptions, 
     print(iterVB)
   }
   
-  return(reorderBlocks(postParam, collecTau))
+  return(reorderBlocks(postParam, collecTau, model))
     
 
 }
@@ -53,28 +53,36 @@ VBEMBipartiteColSBM = function(collecNetwork,priorParam,collecTau,estimOptions, 
 ############################################################
 ####################" MSTEP from CollecTau to postParam
 ###############################################################
-Mstep <- function(collecNetwork,M, nRow,nCol,collecTau,priorParam,model){
+Mstep <- function(collecNetwork,M, nRow,nCol,collecTau,priorParam,emissionDist, model){
   
   
   postParam <- priorParam
   S <- lapply(1:M,function(m){t(collecTau[[m]]$row) %*% matrix(1,nRow[m],nCol[m]) %*% collecTau[[m]]$col})
   SY <- lapply(1:M,function(m){t(collecTau[[m]]$row) %*% collecNetwork[[m]] %*% collecTau[[m]]$col})
   
+  
   postParam$connectParam$alpha  <- priorParam$connectParam$alpha +  Reduce(`+`, SY)
-  postParam$connectParam$beta  <- priorParam$connectParam$beta +   Reduce(`+`, S) - Reduce(`+`, SY)
+  postParam$connectParam$beta  <- priorParam$connectParam$beta +   Reduce(`+`, S) - (emissionDist == 'bernoulli') * Reduce(`+`, SY)
   
   Rtau <-  t(sapply(1:M,function(m){colSums(collecTau[[m]]$row)}))
   Ctau <-  t(sapply(1:M,function(m){colSums(collecTau[[m]]$col)}))
   
-  postParam$blockProp$row  <- priorParam$blockProp$row + Rtau
-  postParam$blockProp$col  <- priorParam$blockProp$col + Ctau
+  if(model == 'iidColBipartiteSBM'){  
+    postParam$blockProp$row  <- priorParam$blockProp$row + apply(Rtau,2,sum)
+    postParam$blockProp$col  <- priorParam$blockProp$col + apply(Ctau,2,sum)
+  }
+  if(model == 'piColBipartiteSBM'){
+    postParam$blockProp$row  <- priorParam$blockProp$row + Rtau
+    postParam$blockProp$col  <- priorParam$blockProp$col + Ctau
+  }
+  
   
   return(postParam)
 }
 ############################################################
 ####################" MSTEP from CollecTau to postParam
 ###############################################################
-Estep <- function(collecNetwork,M, nRow,nCol,KRow,KCol,collecTau,postParam,estimOptions,model){
+Estep <- function(collecNetwork,M, nRow,nCol,KRow,KCol,collecTau,postParam,estimOptions,emissionDist, model){
   
   iterVE <- 0
   stopVE <- 0
@@ -86,20 +94,28 @@ Estep <- function(collecNetwork,M, nRow,nCol,KRow,KCol,collecTau,postParam,estim
     if((KCol>0) | (KRow>1)){
     ## useful quantities
       DiGAlpha <- digamma(postParam$connectParam$alpha) ### useful for Poisson and Bernoulli
-      if(model == 'bernoulli'){
+      if(emissionDist == 'bernoulli'){
         DiGBeta <- digamma(postParam$connectParam$beta) 
         DiGAlphaBeta  <- digamma(postParam$connectParam$beta + postParam$connectParam$alpha) 
       }
       
       for(m in 1:M){
-        DiblockProp_m_col <- digamma(postParam$blockProp$col[m,]) - digamma(sum(postParam$blockProp$col[m,]))
-        DiblockProp_m_row <- digamma(postParam$blockProp$row[m,]) - digamma(sum(postParam$blockProp$row[m,]))
+        if(model == 'iidColBipartiteSBM'){
+          DiblockProp_m_col <- digamma(postParam$blockProp$col) - digamma(sum(postParam$blockProp$col))
+          DiblockProp_m_row <- digamma(postParam$blockProp$row) - digamma(sum(postParam$blockProp$row))
+        }
+        if(model == 'piColBipartiteSBM'){
+          DiblockProp_m_col <- digamma(postParam$blockProp$col[m,]) - digamma(sum(postParam$blockProp$col[m,]))
+          DiblockProp_m_row <- digamma(postParam$blockProp$row[m,]) - digamma(sum(postParam$blockProp$row[m,]))
+        }
+        
+
         # row
-        if(model=='poisson'){
+        if(emissionDist == 'poisson'){
           lY_m  <- collecNetwork[[m]] %*% tcrossprod(collecTau[[m]]$col,log(postParam$connectParam$beta) + DiGAlpha)  
           lY_m <- lY_m - matrix(1,nRow[m], nCol[m])  %*% tcrossprod(collecTau[[m]]$col,postParam$connectParam$alpha/postParam$connectParam$beta)
         }
-        if(model=='bernoulli'){
+        if(emissionDist == 'bernoulli'){
           lY_m  <- collecNetwork[[m]] %*% tcrossprod(collecTau[[m]]$col,DiGAlpha- DiGAlphaBeta)  +  (1-collecNetwork[[m]]) %*% tcrossprod(collecTau[[m]]$col,DiGBeta- DiGAlphaBeta)
         }
         l3_m  <- matrix(DiblockProp_m_row,nrow = nRow[m],ncol = KRow,byrow = TRUE)
@@ -107,11 +123,11 @@ Estep <- function(collecNetwork,M, nRow,nCol,KRow,KCol,collecTau,postParam,estim
         
         
         # col
-        if(model=='poisson'){
+        if(emissionDist == 'poisson'){
           lY_m  <- t(collecNetwork[[m]]) %*% tcrossprod(collecTau[[m]]$row,t(log(postParam$connectParam$beta) + DiGAlpha))  
           lY_m <- lY_m - matrix(1, nCol[m],nCol[m])  %*% tcrossprod(collecTau[[m]]$row,t(postParam$connectParam$alpha/postParam$connectParam$beta))
         }
-        if(model=='bernoulli'){
+        if(emissionDist == 'bernoulli'){
           lY_m <-  t(collecNetwork[[m]])  %*% tcrossprod(collecTau[[m]]$row,t(DiGAlpha- DiGAlphaBeta))  + t(1-collecNetwork[[m]]) %*% tcrossprod(collecTau[[m]]$row,t(DiGBeta- DiGAlphaBeta))
         }
         l3_m  <- matrix(DiblockProp_m_col,nrow = nCol[m],ncol = KCol,byrow = TRUE)

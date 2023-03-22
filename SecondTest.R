@@ -6,39 +6,24 @@ source('initializationCollecTau.R')
 library(gtools)
 
 
+###########################################################################################
+############# simulation avec iid colSBM mais certains très petits réseaux. 
+#############################################################################################
 
-#seed  <- 14579
-#set.seed(seed)
+
+set.seed(seed)
 M = 6
 KRow = 4
 KCol = 3
 
 
-########### block proportions simul piColSBM avec classes vides
-blockProp <- list()
-blockProp$row <-  rdirichlet(M,rep(1/(KRow-1),KRow))  #### emptying some blocks in certain netwokrs 
-blockProp$col <- rdirichlet(M,rep(1/(KCol-1),KCol))   #### emptying some blocks in certain netwokros
-blockProp$row[1,] <- rep(1/KRow,KRow) 
-blockProp$col[1,] <- rep(1/KCol,KCol)
-print(blockProp)
-
-
-########### block proportions simul piColSBM avec quasi même proba partout
-# blockProp <- list()
-# blockProp$row <-  rdirichlet(M,rep(5*KRow,KRow))  #### emptying some blocks in certain netwokrs 
-# blockProp$col <- rdirichlet(M,rep(5*KCol,KCol))   #### emptying some blocks in certain netwokros
-# blockProp$row[1,] <- rep(1/KRow,KRow) 
-# blockProp$col[1,] <- rep(1/KCol,KCol)
-# print(blockProp)
-
-
 
 
 ########### block proportions simul iidColSBM 
-#blockProp <- list()
-#blockProp$row <-  matrix(rdirichlet(1,rep(KRow,KRow)),byrow = TRUE,nrow = M, ncol = KRow) #### emptying some blocks in certain netwokrs 
-#blockProp$col <- matrix(rdirichlet(1,rep(KCol,KCol)),byrow = TRUE,nrow = M, ncol = KCol)   #### emptying some blocks in certain netwokros
-#print(blockProp)
+blockProp <- list()
+blockProp$row <-  matrix(rdirichlet(1,rep(KRow,KRow)),byrow = TRUE,nrow = M, ncol = KRow) #### emptying some blocks in certain netwokrs 
+blockProp$col <- matrix(rdirichlet(1,rep(KCol,KCol)),byrow = TRUE,nrow = M, ncol = KCol)   #### emptying some blocks in certain netwokros
+print(blockProp)
 
 
 
@@ -53,6 +38,8 @@ connectParam$mean <- connectParam$mean[oRow,oCol]
 
 ########### sizes of networks
 nbNodes <- matrix(sample(10*c(6:10),M*2,replace = TRUE),M,2)
+nbNodes[5,] = c(30,20)
+nbNodes[6,] = c(20,30)
 
 
 ############################################################
@@ -73,12 +60,19 @@ initBipartite <- lapply(collecNetwork,estimateBipartiteSBM)
 myRef = which.max(rowSums(t(sapply(initBipartite,function(m){m$nbBlocks}))))
 collecTau <- initCollecTau(initBipartite,ref = myRef)
 
+
+
+
+
+t(sapply(initBipartite,function(m){m$nbBlocks}))
+
+
+
 KRowEstim <- initBipartite[[myRef]]$nbBlocks[1]
 KColEstim <- initBipartite[[myRef]]$nbBlocks[2]
 
 
 
- 
 ###################### Estim avec Kcol Krow true
 
 
@@ -113,10 +107,10 @@ best_model <- names(res)[which.max(res)]
 print(res)
 print(best_model)
 
+
+
 if(best_model=='iidCol'){resEstim <- resEstim_iid}
 if(best_model=='piCol'){resEstim <- resEstim_picol}
-
-
 
 postMeanEstim <- list()
 postMeanEstim$connectParam <- resEstim$postParam$connectParam$alpha/(resEstim$postParam$connectParam$alpha + resEstim$postParam$connectParam$beta)
@@ -128,7 +122,7 @@ postMemberships <- lapply(resEstim$collecTau,function(tau){
   Z$row <- apply(tau$row,1,which.max)
   Z$col <- apply(tau$col,1,which.max)
   return(Z)
-})
+  })
 
 
 lapply(1:M,function(m){table(postMemberships[[m]]$row,mySampler[[m]]$memberships$row)})
@@ -138,29 +132,13 @@ lapply(1:M,function(m){table(postMemberships[[m]]$col,mySampler[[m]]$memberships
 lapply(1:M,function(m){table(postMemberships[[m]]$row,initBipartite[[m]]$memberships$row)})
 lapply(1:M,function(m){table(postMemberships[[m]]$col,initBipartite[[m]]$memberships$col)})
 
-lapply(1:M,function(m){table(postMemberships[[m]]$row,mySampler[[m]]$memberships$row)})
-lapply(1:M,function(m){table(postMemberships[[m]]$col,mySampler[[m]]$memberships$col)})
+collepostMemberships[[5]]$row
+
 
 
  
-################ sepSBM 
 
-
-logLikMarg_sep <- matrix(0,M,2)
-for (m in 1:M){
-  print(paste0('Network ',m))
-  KRow_m <- initBipartite[[m]]$nbBlocks[1]
-  KCol_m <- initBipartite[[m]]$nbBlocks[2]
-  tau_m <- initBipartite[[m]]$probMemberships
-  priorParam_m <- setPriorParam(1, KRow_m,KCol_m,model ='bernoulli')
-  resEstim_m  <- VBEMBipartiteColSBM(list(collecNetwork[[m]]),priorParam_m,list(tau_m),estimOptions,model  ='bernoulli')
-  logLikMarg_sep[m,] <-  computeLogLikMarg(list(collecNetwork[[m]]), list(tau_m),priorParam_m,model = 'bernoulli')
-}
-
-
-
-cbind(sum(logLikMarg),sum(logLikMarg_sep))
-    
+   
 
 muPost <-   resEstim$postParam$connectParam$alpha/(resEstim$postParam$connectParam$beta + resEstim$postParam$connectParam$alpha)
 oCol <- order(colSums(muPost),decreasing = TRUE)
@@ -174,7 +152,7 @@ resEstim$postParam$blockProp$cow <- resEstim$postParam$blockProp$cow[,oCol]
 
 
 ############## Plot post 
-par(mfrow = c(KRowEstim,KColEstim))
+par(mfrow = c(KRow,KCol))
 for (k in 1:KRow){
   for (l in 1:KCol){
   curve(dbeta(x,resEstim$postParam$connectParam$alpha[k,l],resEstim$postParam$connectParam$beta[k,l]),ylab = 'post')

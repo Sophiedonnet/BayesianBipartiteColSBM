@@ -43,7 +43,7 @@ distPostParam <- function(postParam,postParamOld){
 
 
 ####################### Reorder groups row / cols. 
-reorderBlocks  <- function(postParam, collecTau){
+reorderBlocks  <- function(postParam, collecTau ,model){
   
   meanPost <- postParam$connectParam$alpha / (postParam$connectParam$alpha + postParam$connectParam$beta)
   colMean <- apply(meanPost,2,mean); 
@@ -52,8 +52,16 @@ reorderBlocks  <- function(postParam, collecTau){
   ordRow <- order(rowMean,decreasing = TRUE)
   
   postParam$connectParam <- lapply(postParam$connectParam,function(u){u[ordRow,ordCol]})
-  postParam$blockProp$row <- postParam$blockProp$row[,ordRow]
-  postParam$blockProp$col <- postParam$blockProp$col[,ordCol]
+  if(model == 'iidColBipartiteSBM'){  
+    postParam$blockProp$row <- postParam$blockProp$row[ordRow]
+    postParam$blockProp$col <- postParam$blockProp$col[ordCol]
+  }
+  if(model == 'piColBipartiteSBM'){
+    postParam$blockProp$row <- postParam$blockProp$row[,ordRow]
+    postParam$blockProp$col <- postParam$blockProp$col[,ordCol]
+  }
+  
+  
   collecTau <- lapply(collecTau ,function(tau){
     tauNew <- tau
     tauNew$row <-tau$row[,ordRow]
@@ -66,10 +74,8 @@ reorderBlocks  <- function(postParam, collecTau){
 }
 
 ############################## log marg likelihood
-computeLogLikMarg <- function(collecNetwork, collecTau,priorParam,model){
+computeLogLikMarg <- function(collecNetwork, collecTau, priorParam, emissionDist, model){
 
-  
-  
   collecZMAP <- lapply(collecTau,function(tau){
     indZ <- tau
     indZ$row <- t(sapply(1:nrow(tau$row),function(i){u <- 0*tau$row[i,]; u[which.max(tau$row[i,])]=1; return(u)}))
@@ -79,36 +85,40 @@ computeLogLikMarg <- function(collecNetwork, collecTau,priorParam,model){
     return(indZ)
   })
 
-  #browser()
-  if(model=='bernoulli'){
+  if(emissionDist =='bernoulli'){
     S1 <- lapply(1:length(collecNetwork),function(m){t(collecZMAP[[m]]$row)%*% collecNetwork[[m]] %*% collecZMAP[[m]]$col})
     S0 <- lapply(1:length(collecNetwork),function(m){t(collecZMAP[[m]]$row)%*% (1-collecNetwork[[m]]) %*% collecZMAP[[m]]$col})
     
     ahat <- Reduce('+',S1)
     bhat <- Reduce('+',S0)
     lprobYZ <- sum(lbeta(ahat+priorParam$connectParam$alpha,bhat+priorParam$connectParam$beta) -lbeta(priorParam$connectParam$alpha,priorParam$connectParam$beta))
-   # lprobYZ2 <- sum(lbeta(as.vector(S1)+priorParam$connectParam$alpha,bhat+priorParam$connectParam$beta)) - length(collecNetwork)*lbeta(priorParam$connectParam$alpha,priorParam$connectParam$beta)
-    
-    
-    
   }
   
   if(model=='poisson'){
     lprobYZ  = NA
     }
   
-  
-  lprobZ <- Reduce("+", 
+  if(model == 'piColBipartiteSBM'){
+    lprobZ <- Reduce("+", 
                    lapply(1:length(collecNetwork),
                           function(m){
                             dPostRow <- apply(collecZMAP[[m]]$row,2,sum) 
                             LRow  <- mylBetaFunction(dPostRow + priorParam$blockProp$row[m,]) - mylBetaFunction(priorParam$blockProp$row[m,])
-                            dPostCol <- apply(collecZMAP[[m]]$col,2,sum) + priorParam$blockProp$col[m,]
+                            dPostCol <- apply(collecZMAP[[m]]$col,2,sum) 
                             LCol  <- mylBetaFunction(dPostCol + priorParam$blockProp$col[m,]) - mylBetaFunction(priorParam$blockProp$col[m,])
                             return(LRow  +  LCol)
                             }
                           )
-                   ) 
+                    )
+  }
+  if(model == 'iidColBipartiteSBM'){
+    dPostRow <- rowSums(sapply(1:length(collecNetwork),function(m){apply(collecZMAP[[m]]$row,2,sum)}))
+    dPostCol <- rowSums(sapply(1:length(collecNetwork),function(m){apply(collecZMAP[[m]]$col,2,sum)}))
+    LRow  <- mylBetaFunction(dPostRow + priorParam$blockProp$row) - mylBetaFunction(priorParam$blockProp$row)
+    LCol  <- mylBetaFunction(dPostCol + priorParam$blockProp$col) - mylBetaFunction(priorParam$blockProp$col)
+    lprobZ <-  LRow  +  LCol
+  }
+  
 
   res <- c(lprobYZ,lprobZ)
   names(res) =c('lprobYZ','lprobZ')
@@ -123,24 +133,32 @@ mylBetaFunction = function(alpha){
 
 
 ################################## set prior param
-setPriorParam <- function(M,KRow,KCol,model){
+setPriorParam <- function(M,KRow,KCol,emissionDist, model){
   # M  : number of bipartite networks
   # Krow  : number of blocks in row
   # Kcol  : number of blocks in col
-  # model : poisson or bernoulli
+  # emissionDistr : poisson or bernoulli
   
   priorParam <- list()
   
+  
+  
   priorParam$blockProp <- list()
-  priorParam$blockProp$row = matrix(1/KRow,M,KRow) ### Jeffreys dirichlet prior the pi^m and rho^m
-  priorParam$blockProp$col = matrix(1/KCol,M,KCol)
+  if (model == 'iidColBipartiteSBM'){
+    priorParam$blockProp$row = rep(1/KRow,KRow) ### Jeffreys dirichlet prior the pi and rho
+    priorParam$blockProp$col = rep(1/KCol,KCol)
+  }
+  if (model == 'piColBipartiteSBM'){
+    priorParam$blockProp$row = matrix(1/KRow,M,KRow) ### Jeffreys dirichlet prior the pi^m and rho^m
+    priorParam$blockProp$col = matrix(1/KCol,M,KCol)
+  }
   
   priorParam$connectParam<- list()
-  if (model=='bernoulli'){
+  if (emissionDist =='bernoulli'){
     priorParam$connectParam$alpha <- matrix(1,KRow,KCol) ### Uniform prior on the alpha_{kl}
     priorParam$connectParam$beta <- matrix(1,KRow,KCol)
   }
-  if (model=='poisson'){
+  if (emissionDist =='poisson'){
     priorParam$connectParam$alpha <- matrix(1,KRow,KCol) ### Exp de param 1/100
     priorParam$connectParam$beta <- matrix(1/100,KRow,KCol)
   }
