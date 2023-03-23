@@ -11,7 +11,6 @@ library(gtools)
 #############################################################################################
 
 
-set.seed(seed)
 M = 6
 KRow = 4
 KCol = 3
@@ -48,7 +47,7 @@ nbNodes[6,] = c(20,30)
 
 
 mySampler <- lapply(1:M, function(m){sampleBipartiteSBM(nbNodes = nbNodes[m,],  list(row=blockProp$row[m,],col=blockProp$col[m,]),  connectParam)})
-collecNetwork <- lapply(mySampler,function(l){l$networkData})
+collecNetworks <- lapply(mySampler,function(l){l$networkData})
 
 
 
@@ -56,17 +55,9 @@ collecNetwork <- lapply(mySampler,function(l){l$networkData})
 
 ############### init Tau
 
-initBipartite <- lapply(collecNetwork,estimateBipartiteSBM)
+initBipartite <- lapply(collecNetworks,estimateBipartiteSBM)
 myRef = which.max(rowSums(t(sapply(initBipartite,function(m){m$nbBlocks}))))
 collecTau <- initCollecTau(initBipartite,ref = myRef)
-
-
-
-
-
-t(sapply(initBipartite,function(m){m$nbBlocks}))
-
-
 
 KRowEstim <- initBipartite[[myRef]]$nbBlocks[1]
 KColEstim <- initBipartite[[myRef]]$nbBlocks[2]
@@ -83,23 +74,16 @@ estimOptions <- list(maxIterVB = 1000,
 
 
 
-#   Making the groups correspond between networks
 
 
 
+hyperparamPrior_iid <- setHyperparamPrior(M,KRowEstim,KColEstim, emissionDist  = 'bernoulli' , model ='iidColBipartiteSBM')
+resEstim_iid  <- VBEMBipartiteColSBM(collecNetworks,hyperparamPrior_iid,collecTau,estimOptions, emissionDist  = 'bernoulli' , model ='iidColBipartiteSBM')
+logLikMarg_iid <- computeLogLikMarg(collecNetworks, resEstim_iid$collecTau,hyperparamPrior_iid, emissionDist  = 'bernoulli' , model ='iidColBipartiteSBM')
 
-
-
-
-
-
-priorParam_iid <- setPriorParam(M,KRowEstim,KColEstim, emissionDist  = 'bernoulli' , model ='iidColBipartiteSBM')
-resEstim_iid  <- VBEMBipartiteColSBM(collecNetwork,priorParam_iid,collecTau,estimOptions, emissionDist  = 'bernoulli' , model ='iidColBipartiteSBM')
-logLikMarg_iid <- computeLogLikMarg(collecNetwork, resEstim_iid$collecTau,priorParam_iid, emissionDist  = 'bernoulli' , model ='iidColBipartiteSBM')
-
-priorParam_picol <- setPriorParam(M,KRowEstim,KColEstim, emissionDist  = 'bernoulli' , model ='piColBipartiteSBM')
-resEstim_picol  <- VBEMBipartiteColSBM(collecNetwork,priorParam_picol,collecTau,estimOptions, emissionDist  = 'bernoulli' , model ='piColBipartiteSBM')
-logLikMarg_picol <- computeLogLikMarg(collecNetwork, resEstim_picol$collecTau,priorParam_picol, emissionDist  = 'bernoulli' , model ='piColBipartiteSBM')
+hyperparamPrior_picol <- setHyperparamPrior(M,KRowEstim,KColEstim, emissionDist  = 'bernoulli' , model ='piColBipartiteSBM')
+resEstim_picol  <- VBEMBipartiteColSBM(collecNetworks,hyperparamPrior_picol,collecTau,estimOptions, emissionDist  = 'bernoulli' , model ='piColBipartiteSBM')
+logLikMarg_picol <- computeLogLikMarg(collecNetworks, resEstim_picol$collecTau,hyperparamPrior_picol, emissionDist  = 'bernoulli' , model ='piColBipartiteSBM')
 
 res <- c(sum(logLikMarg_iid),sum(logLikMarg_picol))
 names(res) = c('iidCol','piCol')
@@ -113,8 +97,8 @@ if(best_model=='iidCol'){resEstim <- resEstim_iid}
 if(best_model=='piCol'){resEstim <- resEstim_picol}
 
 postMeanEstim <- list()
-postMeanEstim$connectParam <- resEstim$postParam$connectParam$alpha/(resEstim$postParam$connectParam$alpha + resEstim$postParam$connectParam$beta)
-postMeanEstim$blockProp <- lapply(resEstim$postParam$blockProp,function(l){normByRow(l)}) 
+postMeanEstim$connectParam <- resEstim$hyperparamPost$connectParam$alpha/(resEstim$postParam$connectParam$alpha + resEstim$postParam$connectParam$beta)
+postMeanEstim$blockProp <- lapply(resEstim$hyperparamPost$blockProp,function(l){normByRow(l)}) 
 
 
 postMemberships <- lapply(resEstim$collecTau,function(tau){
@@ -132,7 +116,6 @@ lapply(1:M,function(m){table(postMemberships[[m]]$col,mySampler[[m]]$memberships
 lapply(1:M,function(m){table(postMemberships[[m]]$row,initBipartite[[m]]$memberships$row)})
 lapply(1:M,function(m){table(postMemberships[[m]]$col,initBipartite[[m]]$memberships$col)})
 
-collepostMemberships[[5]]$row
 
 
 
