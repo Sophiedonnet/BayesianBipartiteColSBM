@@ -97,7 +97,7 @@ condLogLik = function(data, H.mc,emissionDist){
   if(emissionDist == 'poisson'){
     v <- sapply(1:M,function(m){
       par.m <- H.mc$Z[[m]]$row%*% H.mc$connectParam %*% t(H.mc$Z[[m]]$col)
-      res.m  <- sum(dpois(collecNetworks[[m]],1,par.m,log = TRUE))
+      res.m  <- sum(dpois(collecNetworks[[m]],par.m,log = TRUE))
     }
     )
   }
@@ -270,10 +270,8 @@ MCMC.Kernel <- function(data, H.mc, alpha.t, hyperparamApproxPost, hyperparamPri
       
       if(emissionDist == 'bernoulli'){H.mc$connectParam <- matrix(rbeta(KRow*KCol,alpha_sim,beta_sim),KRow,KCol)}
       if(emissionDist == 'poisson'){H.mc$connectParam <- matrix(rgamma(KRow*KCol,alpha_sim,beta_sim),KRow,KCol)}
-
-        
     }
-  ############# simulation of blockParam (using adjusted Langevin metropolis Hastings) ????? 
+  ############# simulation of blockParam
   if (Parms.MCMC$op.echan$blockProp == 1) {
     
     S.row <- t(sapply(1:M, function(m){colSums(H.mc$Z[[m]]$row)}))
@@ -291,8 +289,18 @@ MCMC.Kernel <- function(data, H.mc, alpha.t, hyperparamApproxPost, hyperparamPri
       e_col <- alpha.t*(S.col + hyperparamPrior$blockProp$col) + (1 - alpha.t) * hyperparamPrior$blockProp$col
       H.mc$blockProp$col <- t(sapply(1:M,function(m){rdirichlet(1,e_col[m,])}))
     }
+  }
+  ############# simulation of Z 
+  if (Parms.MCMC$op.echan$Z == 1) {
     
+    for (m in 1:M){
+      
+      
+    }
     
+  }
+  
+  
     
       })         
       
