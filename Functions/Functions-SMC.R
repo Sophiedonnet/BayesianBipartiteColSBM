@@ -72,11 +72,11 @@ Func.sampling <- function(obj,Resample) {
 # Tools functions 
 #-----------------------------------------------------------------
 
-Func.search <- function(H.sample,mc) {
-  Nb_obj <- length(H.sample)
+Func.search <- function(HSample,mc) {
+  Nb_obj <- length(HSample)
   H.mc <-  list();
   for (o in 1:Nb_obj) {
-    obj=H.sample[[o]]; ##### echantillon de taille MC pour l'objet o. donc de taille   MCx(? ? ?)
+    obj=HSample[[o]]; ##### echantillon de taille MC pour l'objet o. donc de taille   MCx(? ? ?)
     if (is.vector(obj)) {H.mc[[o]] = obj[mc]}
     if (is.array(obj)) {
       if (length(dim(obj)) == 2) {H.mc[[o]] = obj[mc,]}
@@ -86,7 +86,7 @@ Func.search <- function(H.sample,mc) {
       if (length(dim(obj))>5) {print('erreur of array size')}
     }
   }
-  names(H.mc) = names(H.sample)
+  names(H.mc) = names(HSample)
   return(H.mc)
 }
 
@@ -117,13 +117,10 @@ SMCColBipartiteSBM<- function(collecNetworks,hyperparamPrior,hyperparamApproxPos
   op.parallel <- estimOptionsSMC$op.parallel 
   op.print <- estimOptionsSMC$op.print #TRUE
   NB.iter.max <- estimOptionsSMC$NB.iter.max # Inf
-  op.SMC.classic.IS <- estimOptionsSMC$typeSMC == 'classic.IS'
   op.SMC.classic <- estimOptionsSMC$typeSMC == 'classic'
   
   
 
-  #----------------- Loading the functions corresponding to the model
-  source(paste('Functions/Functions-',model,'.R',sep = ''))
   
   # ----------------- parameters of the SMC
   os  <- op.parallel$os
@@ -131,53 +128,34 @@ SMCColBipartiteSBM<- function(collecNetworks,hyperparamPrior,hyperparamApproxPos
   #------------------   ITERATION 0  : simulation with the first init (VBEM or Prior)
   #-------------------------------------------------------------------------------------
   
-  if (op.SMC.classic == FALSE) {H.sample <- rApproxPost(MC, hyperparamApproxPost, emissionDist, model); W.t <- rep(1/MC,MC)}
-  if ((op.SMC.classic == TRUE) & (op.SMC.classic.IS  ==  FALSE)) {H.sample <- rPrior(MC, hyperparamPrior, emissionDist, model); W.t <- rep(1/MC,MC)}
-  if ((op.SMC.classic == TRUE) & (op.SMC.classic.IS  ==  TRUE)) { ### we are doing importance sampling at first step
-    H.sample <- rApproxPost(MC, hyperparamApproxPost);
-    logPrior.sample <- logPrior(H.sample, hyperparamPrior,emissionDist, model);
-    logApproxPost.sample <- logApproxPost(H.sample, hyperparamApproxPost,emissionDist, model);
-    log.rho <- logPrior.sample  - logApproxPost.sample
-    log.rho[which(log.rho == -Inf)] = -1e4
-    Anum <- mean(log.rho) ## nomalizing constant to prevent numerical problems
-    Ww.t <- exp(log.rho - Anum)
-    W.t <- Ww.t/sum(Ww.t)
-  }
-  
-  RES <- list(H.Sample.0 = H.sample,W.0 = W.t);
-  
-  
-  alpha.t <- 0; t <- 1;  alpha.vec <- c(alpha.t);
-  vec.log.ratio.Z <- c(0); KL <- c(0, NA);
+  if (op.SMC.classic == FALSE) {
+    HSample <- rParamZ(MC, hyperparamApproxPost, emissionDist, model,nbNodes); W.t <- rep(1/MC,MC)
+  }else{
+    HSample <- rParamZ(MC, hyperparamPrior, emissionDist, model,nbNodes); W.t <- rep(1/MC,MC)
+    }
+  RES <- list(HSample.0 = HSample,W.0 = W.t);
+  alpha.t <- 0; 
+  t <- 1;  
+  alpha.vec <- c(alpha.t);
+  vec.log.ratio.Z <- c(0); 
+  KL <- c(0, NA);
   
   Vec.resampling = c(TRUE)
-  
-  if (model == 'LogReg') {
-    MeanSample <- list(); VarSample <- list();
-    MeanSample[[t]] <- colSums(matrix(W.t,ncol = MC) %*% H.sample$beta)
-    VarSample[[t]] <- cov.wt(H.sample$beta,wt = W.t)$cov
-  }
-  if (model == 'SBM') {
-    MeanSample = list(); VarSample = list();
-    theta.sample <- cbind(H.sample$pi[, -K], F_Array2Mat(H.sample$gamma))
-    MeanSample[[t]] = t(W.t)  %*%  theta.sample
-    VarSample[[t]] = cov.wt(theta.sample, wt = W.t)$cov
-  }
-  
+
   if (op.save == TRUE) {
     RES.t <- list(); 
-    RES.t[[t]] <- list(H.sample = H.sample,W.t = W.t,alpha.vec = alpha.vec,alpha.t = alpha.t)
+    RES.t[[t]] <- list(HSample = HSample,W.t = W.t,alpha.vec = alpha.vec,alpha.t = alpha.t)
   }
   
-  logPrior.sample <- logPrior(H.sample, hyperparam.prior)
-  if (op.SMC.classic) {logApproxPost.sample <- logPrior.sample}else{logApproxPost.sample <- logApproxPost(H.sample, hyperparam.ApproxPost)}
-  condloglik.sample <- likelihood(data, H.sample)
+  logPrior.sample <- logPrior(HSample, hyperparamPrior)
+  if (op.SMC.classic) {logApproxPost.sample <- logPrior.sample}else{logApproxPost.sample <- logApproxPost(HSample, hyperparamApproxPost)}
+  condloglik.sample <- likelihood(collecNetworks, HSample)
   log.rho <- logPrior.sample  +  condloglik.sample - logApproxPost.sample
   
   r.Inf <- which(log.rho == -Inf)
   if (length(r.Inf) > 0) {log.rho[r.Inf] = min(log.rho[-r.Inf])/2}
   U <- c(sum(W.t * log.rho))
-  Nb_obj <- length(H.sample)
+  Nb_obj <- length(HSample)
   
   #-------------------------------------------------------------------------------------
   #------------------   ITERATIONS suivantes
@@ -215,7 +193,7 @@ SMCColBipartiteSBM<- function(collecNetworks,hyperparamPrior,hyperparamApproxPos
     if (resampling.step == TRUE) {
       Resample <- sample(1:M, replace = T, prob = W.t)
       W.t <- rep(1/M,M)
-      invisible(lapply(1:Nb_obj,function(o) {H.sample[[o]] <<- Func.sampling(H.sample[[o]],Resample)}))
+      invisible(lapply(1:Nb_obj,function(o) {HSample[[o]] <<- Func.sampling(HSample[[o]],Resample)}))
     }
     
     # w.cumul.t <-  w.cumul.t*w.increm.t
@@ -231,11 +209,11 @@ SMCColBipartiteSBM<- function(collecNetworks,hyperparamPrior,hyperparamApproxPos
     
     #--------  Propagate the particles with pi_t as invariant kernel -------------
     
-    H.newsample <- H.sample;
+    H.newsample <- HSample;
     f_MCMC <- function(m) {
       if ((m %% 500 == 0) & (model == 'SBMreg')) {cat(m, '')}
       # cat('\n m=', m, 'b=')
-      H.m <- Func.search(H.sample,m)
+      H.m <- Func.search(HSample,m)
       GMMB.m <- MCMC.Kernel(data, H = H.m, alpha.t, hyperparam.ApproxPost, hyperparam.prior, op.save = FALSE, op.print = Parms.MCMC.in.SMC$B + 1, Parms.MCMC = Parms.MCMC.in.SMC,op.SMC.classic)
       return(GMMB.m)}
     
@@ -256,22 +234,22 @@ SMCColBipartiteSBM<- function(collecNetworks,hyperparamPrior,hyperparamApproxPos
       if (type.obj == 3) {for (m in 1:M) {H.newsample[[o]][m,,,] <-  OUTPUT_MCMC[o,m][[1]]}}
       H.newsample[[o]] = obj
     }
-    # cat(dim(H.sample$pi), colMeans(H.sample$pi), '/')
-    H.sample <- H.newsample
-    # cat(dim(H.sample$pi), colMeans(H.sample$pi), '\n')
+    # cat(dim(HSample$pi), colMeans(HSample$pi), '/')
+    HSample <- H.newsample
+    # cat(dim(HSample$pi), colMeans(HSample$pi), '\n')
     # cat('Fin Output_MCMC \n')
     
     if (op.save == TRUE) {
-      RES.t[[t]] <- list(H.sample = H.sample,W.t = W.t,alpha.vec = alpha.vec,alpha.t = alpha.t);
+      RES.t[[t]] <- list(HSample = HSample,W.t = W.t,alpha.vec = alpha.vec,alpha.t = alpha.t);
       RES.t[[t]]$w.increm.t <- w.increm.t;
       save(RES.t,file = 'encours.Rdata');
     }
     
     #------ Computation avec the log.rho to compute the w.increment.t  and U for marginal likelihood --------------------------------
     
-    logPrior.sample <- logPrior(H.sample, hyperparam.prior)
-    if (op.SMC.classic == TRUE) {logApproxPost.sample <- logPrior.sample}else{logApproxPost.sample <- logApproxPost(H.sample, hyperparam.ApproxPost)}
-    condloglik.sample <- likelihood(data, H.sample)
+    logPrior.sample <- logPrior(HSample, hyperparam.prior)
+    if (op.SMC.classic == TRUE) {logApproxPost.sample <- logPrior.sample}else{logApproxPost.sample <- logApproxPost(HSample, hyperparam.ApproxPost)}
+    condloglik.sample <- likelihood(data, HSample)
     log.rho <- logPrior.sample  +  condloglik.sample - logApproxPost.sample
     log.rho[which(log.rho == -Inf)] = -1e4
     log.rho[which(logApproxPost.sample == -Inf)] = -1e4
@@ -290,11 +268,11 @@ SMCColBipartiteSBM<- function(collecNetworks,hyperparamPrior,hyperparamApproxPos
     
     # Moments
     if (model == 'LogReg') {
-      MeanSample[[t]] <- colSums(matrix(W.t,ncol = M) %*% H.sample$beta)
-      VarSample[[t]] <- cov.wt(matrix(H.sample$beta,nrow = M),wt = W.t)$cov
+      MeanSample[[t]] <- colSums(matrix(W.t,ncol = M) %*% HSample$beta)
+      VarSample[[t]] <- cov.wt(matrix(HSample$beta,nrow = M),wt = W.t)$cov
     }
     if (model == 'SBM') {
-      theta.sample = cbind(H.sample$pi[, -K], F_Array2Mat(H.sample$gamma))
+      theta.sample = cbind(HSample$pi[, -K], F_Array2Mat(HSample$gamma))
       MeanSample[[t]] = t(W.t)  %*%  theta.sample
       VarSample[[t]] = cov.wt(theta.sample, wt = W.t)$cov
     }
@@ -322,7 +300,7 @@ SMCColBipartiteSBM<- function(collecNetworks,hyperparamPrior,hyperparamApproxPos
   
   ##########
   if (op.save == TRUE) {RES$RES.t <- RES.t}
-  RES$H.sample_end <- H.sample
+  RES$HSample_end <- HSample
   RES$W.end <- W.t
   RES$alpha.vec <- alpha.vec
   RES$vec.log.ratio.Z <- vec.log.ratio.Z;

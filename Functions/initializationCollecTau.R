@@ -3,6 +3,8 @@ initCollecTau <- function(initBipartite,ref){
   KRowEstim <- initBipartite[[ref]]$nbBlocks[1]
   KColEstim <- initBipartite[[ref]]$nbBlocks[2]
   
+  nbNodes <- t(sapply(initBipartite, function(sbm){sbm$nbNodes}))
+
   collecTau <- lapply(1:M,function(m){
     eps  <-  10^-5
     alpha_ref <- initBipartite[[ref]]$connectParam$mean
