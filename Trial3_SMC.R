@@ -8,7 +8,7 @@ source('Functions/initializationCollecTau.R')
 source('Functions/Functions-SMC.R')
 source('Functions/Functions-colBipartiteSBM.R')
 source('Functions/Functions-checks.R')
-
+source('Functions/Function-MCMC-colBipartiteSBM.R')
 
 emissionDist = 'bernoulli'
 model = 'piColBipartiteSBM'
@@ -76,10 +76,10 @@ hyperparamPost <- resEstimVBEM$hyperparamPost
 HSample <- rParamZ(MC, hyperparam = hyperparamPost, emissionDist, model ,nbNodes)
 checkSample(HSample,MC,M,KRow,KCol,hyperparamPost,emissionDist,model)
 
-hyperparamPost <- resEstimVBEM$hyperparamPost
-hyperparamPost$collecTau <- resEstimVBEM$collecTau
-HSample <- rParamZ(MC, hyperparam = hyperparamPost , emissionDist, model ,nbNodes)
-checkSample(HSample,MC,M,KRow,KCol,hyperparamPost,emissionDist,model)
+hyperparamApproxPost <- resEstimVBEM$hyperparamPost
+hyperparamApproxPost$collecTau <- resEstimVBEM$collecTau
+HSample <- rParamZ(MC, hyperparam = hyperparamApproxPost , emissionDist, model ,nbNodes)
+checkSample(HSample,MC,M,KRow,KCol,hyperparamApproxPost,emissionDist,model)
 
 
 
@@ -89,15 +89,33 @@ data <- list(collecNetworks = collecNetworks, M= M, nbNodes = nbNodes)
 L <- likelihood(data,HSample,emissionDist  = 'bernoulli')
 L <- likelihood(data,HSamplePrior,emissionDist  = 'bernoulli')
 
-LPriorCP <- logDist.connectParam(HSample,MC,hyperparam,emissionDist)
+LPriorCP <- logDistConnectParam(HSample,MC,hyperparam,emissionDist)
 
-LPriorBP <- logDirichlet.blockProp(HSample,MC,hyperparam,model)
-LPriorZ <- logMultinom.Z(HSample, M, MC, hyperparamPrior,model)
+LPriorBP <- logDirichletBlockProp(HSample,MC,hyperparam,model)
+LPriorZ <- logMultinomZ(HSample, M, MC, hyperparamPrior,model)
 
 LPrior <- logJointParamZ(HSample,M,MC,hyperparamPrior,emissionDist,model)
-LPost <- logJointParamZ(HSample,M,MC,hyperparamPost,emissionDist,model)
+LPost <- logJointParamZ(HSample,M,MC,hyperparamApproxPost,emissionDist,model)
 
- 
+########################################"
+mc <- 2
+H.mc <- list()
+H.mc$Z <- lapply(1:M, function(m){list(row = HSample$ZSample[[m]]$row[,,mc],col = HSample$ZSample[[m]]$col[,,mc])})
+H.mc$connectParam <- HSample$connectParamSample[,,mc]
+if (model == 'iidColBipartiteSBM'){
+  H.mc$blockProp <- list(row = HSample$blockPropSample$row[,mc],col = HSample$blockPropSample$col[,mc])
+}
+if (model == 'piColBipartiteSBM'){
+  H.mc$blockProp <- list(row = HSample$blockPropSample$row[,,mc],col = HSample$blockPropSample$col[,,mc])
+}
+H.mc.init <- H.mc
+
+H.mc.init$connectParam
+hyperparamPrior$blockProp
+hyperparamPrior$connectParam
+
+  
+  
 ###################### Estim avec Kcol Krow true
 
 mc <- sample(1:MC,1)
