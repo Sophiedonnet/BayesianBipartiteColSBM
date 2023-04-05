@@ -18,14 +18,15 @@ model = 'iidColBipartiteSBM'
 #############################################################################################
 
 
-M = 6
+M = 1
 KRow = 4
 KCol = 3
 #---  block proportions simul iidColSBM 
 blockProp <- list()
-blockProp$row <-  matrix(rdirichlet(1,rep(KRow,KRow)),byrow = TRUE,nrow = M, ncol = KRow) #### emptying some blocks in certain netwokrs 
-blockProp$col <- matrix(rdirichlet(1,rep(KCol,KCol)),byrow = TRUE,nrow = M, ncol = KCol)   #### emptying some blocks in certain netwokros
-print(blockProp)
+blockProp$row <-  matrix(rdirichlet(1,rep(KRow,KRow)),byrow = TRUE,nrow = M, ncol = KRow) #### not emptying some blocks in certain netwokrs 
+blockProp$col <- matrix(rdirichlet(1,rep(KCol,KCol)),byrow = TRUE,nrow = M, ncol = KCol)   #### not  emptying some blocks in certain netwokros
+blockPropTrue <- blockProp
+rm(blockProp)
 
 #-----  connectivity matrix
 means <- matrix(rbeta(KRow*KCol,1/1.1,1/1.1), KRow, KCol)  
@@ -34,13 +35,14 @@ oCol <- order(colSums(connectParam$mean[,]),decreasing = TRUE)
 oRow <- order(rowSums(connectParam$mean[,]),decreasing = TRUE)
 connectParam$mean <- connectParam$mean[oRow,oCol]
 
-
+connectParamTrue <- connectParam
+rm(connectParam)
 #-------  sizes of networks
 nbNodes <- matrix(sample(10*c(6:10),M*2,replace = TRUE),M,2)
 nbNodes[5,] = c(30,20)
 
 #---------  SIMULATION
-mySampler <- lapply(1:M, function(m){sampleBipartiteSBM(nbNodes = nbNodes[m,],  list(row=blockProp$row[m,],col=blockProp$col[m,]),  connectParam)})
+mySampler <- lapply(1:M, function(m){sampleBipartiteSBM(nbNodes = nbNodes[m,],  list(row=blockPropTrue$row[m,],col=blockPropTrue$col[m,]),  connectParamTrue)})
 collecNetworks <- lapply(mySampler,function(l){l$networkData})
 
  
@@ -85,9 +87,9 @@ checkSample(HSample,MC,M,KRow,KCol,hyperparamApproxPost,emissionDist,model)
 
 ##################################
 
-data <- list(collecNetworks = collecNetworks, M= M, nbNodes = nbNodes)
-L <- likelihood(data,HSample,emissionDist  = 'bernoulli')
-L <- likelihood(data,HSamplePrior,emissionDist  = 'bernoulli')
+mydata <- list(collecNetworks = collecNetworks, M= M, nbNodes = nbNodes)
+L <- likelihood(mydata,HSample,emissionDist  = 'bernoulli')
+L <- likelihood(mydata,HSamplePrior,emissionDist  = 'bernoulli')
 
 LPriorCP <- logDistConnectParam(HSample,MC,hyperparam,emissionDist)
 
@@ -110,36 +112,36 @@ if (model == 'piColBipartiteSBM'){
 }
 H.mc.init <- H.mc
 
-H.mc.init$connectParam
-hyperparamPrior$blockProp
-hyperparamPrior$connectParam
 
-  
   
 ###################### Estim avec Kcol Krow true
 
-mc <- sample(1:MC,1)
-H.mc = list()
-H.mc$connectParam <- HSample$connectParamSample[,,mc]
-if(model == 'piColBipartiteSBM'){
-  H.mc$blockProp <- list(row = HSample$blockPropSample$row[,,mc], col = HSample$blockPropSample$col[,,mc])}
-if(model == 'iidColBipartiteSBM'){
-  H.mc$blockProp <- list(row = HSample$blockPropSample$row[,mc], col = HSample$blockPropSample$col[,mc])}
+paramsMCMC = list(nbIterMCMC = 10000)
 
-H.mc$Z<- lapply(1:M,function(m){list(row = HSample$ZSample[[m]]$row[,,mc],col = HSample$ZSample[[m]]$col[,,mc])})
+H.mc.init$Z <-lapply(1:M,function(m){mySampler[[m]]$indMemberships})
+H.mc$blockProp <- list(row = blockPropTrue$row[1,],col = blockPropTrue$col[1,])
+H.mc$connectParam <- connectParamTrue
 
-
-estimOptions <- list(maxIterVB = 1000,
-                     maxIterVE = 100,
-                     valStopCritVE = 10^-5,
-                     valStopCritVB = 10^-5)
+paramsMCMC$opEchan = list(connectParam = FALSE,blockProp = FALSE, Z = TRUE)
 
 
 
+resMCMC <- MCMCKernel(data = mydata, H.mc.init, alpha.t = 1, hyperparApproxPost, hyperparamPrior, emissionDist = 'bernoulli', model = 'iidColBipartiteSBM',paramsMCMC, opSave=TRUE)
+
+k  = sample(1:KRow,1)
+l = sample(1:KCol,1)
+
+par(mfrow=c(2,2))
+burnin  = 5000 
+extr <- burnin:paramsMCMC$nbIterMCMC
+plot(density(resMCMC$seqConnectParam[k,l,extr]),main='alpha')  
+curve(dbeta(x,hyperparamApproxPost$connectParam$alpha[k,l],hyperparamApproxPost$connectParam$beta[k,l]),col='red',add=TRUE)
+abline(v = connectParamTrue$mean[k,l])
+plot(density(resMCMC$seqBlockProp$row[k,extr]),main='pi_k')  
+curve(dbeta(x,hyperparamApproxPost$blockProp$row[k], sum(hyperparamApproxPost$blockProp$row)-hyperparamApproxPost$blockProp$row[k]),col='red',add=TRUE)
+abline(v = blockPropTrue$row[1,k])
+plot(density(resMCMC$seqBlockProp$col[l,extr]),main='rho_l')  
+curve(dbeta(x,hyperparamApproxPost$blockProp$col[l], sum(hyperparamApproxPost$blockProp$col)-hyperparamApproxPost$blockProp$col[l]),col='red',add=TRUE)
+abline(v = blockPropTrue$col[1,l])
 
 
-
-
-hyperparamPrior_picol <- setHyperparamPrior(M,KRowEstim,KColEstim, emissionDist  = 'bernoulli' , model ='piColBipartiteSBM')
-resEstim_picol  <- VBEMBipartiteColSBM(collecNetworks,hyperparamPrior_picol,collecTau,estimOptions, emissionDist  = 'bernoulli' , model ='piColBipartiteSBM')
-logLikMarg_picol <- computeLogLikMarg(collecNetworks, resEstim_picol$collecTau,hyperparamPrior_picol, emissionDist  = 'bernoulli' , model ='piColBipartiteSBM')
