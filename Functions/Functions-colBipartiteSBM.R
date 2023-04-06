@@ -199,12 +199,16 @@ logMultinomZ <- function(HSample, M, MC, hyperparam,model){
 #-----------------------------------------------------------------------
 logJointParamZ <- function(HSample,M, MC, hyperparam,emissionDist,model){
  
-  
   a <- logDistConnectParam(HSample,MC, hyperparam,emissionDist)
   b <- logDirichletBlockProp(HSample,MC, hyperparam,model)
   c <- logMultinomZ(HSample, M, MC, hyperparam,model) 
   return(a+b+c)
 }
+
+#------------------------------------------------------------------------
+logPrior = logJointParamZ
+logApproxPost = logJointParamZ
+
 
 
 

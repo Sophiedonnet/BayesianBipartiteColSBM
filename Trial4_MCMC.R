@@ -12,7 +12,7 @@ source('Functions/Function-MCMC-colBipartiteSBM.R')
 
 emissionDist = 'bernoulli'
 model = 'piColBipartiteSBM'
-model = 'iidColBipartiteSBM'
+#model = 'iidColBipartiteSBM'
 ###########################################################################################
 ############# simulation avec iid colSBM mais certains très petits réseaux. 
 #############################################################################################
@@ -21,10 +21,18 @@ model = 'iidColBipartiteSBM'
 M = 5
 KRow = 4
 KCol = 3
-#---  block proportions simul iidColSBM 
+#-----  block proportions simul iidColSBM 
+#blockPropTrue <- list()
+#blockPropTrue$row <-  matrix(rdirichlet(1,rep(KRow,KRow)),byrow = TRUE,nrow = M, ncol = KRow) #### not emptying some blocks in certain netwokrs 
+#blockPropTrue$col <- matrix(rdirichlet(1,rep(KCol,KCol)),byrow = TRUE,nrow = M, ncol = KCol)   #### not  emptying some blocks in certain netwokros
+
+#-----  block proportions simul piColSBM avec classes vides
 blockPropTrue <- list()
-blockPropTrue$row <-  matrix(rdirichlet(1,rep(KRow,KRow)),byrow = TRUE,nrow = M, ncol = KRow) #### not emptying some blocks in certain netwokrs 
-blockPropTrue$col <- matrix(rdirichlet(1,rep(KCol,KCol)),byrow = TRUE,nrow = M, ncol = KCol)   #### not  emptying some blocks in certain netwokros
+blockPropTrue$row <-  rdirichlet(M,rep(1/(KRow-1),KRow))  #### emptying some blocks in certain netwokrs 
+blockPropTrue$col <- rdirichlet(M,rep(1/(KCol-1),KCol))   #### emptying some blocks in certain netwokros
+blockPropTrue$row[1,] <- rep(1/KRow,KRow) 
+blockPropTrue$col[1,] <- rep(1/KCol,KCol)
+print(blockPropTrue)
 
 #-----  connectivity matrix
 connectParamTrue <- list(mean = round( matrix(rbeta(KRow*KCol,1/1.1,1/1.1), KRow, KCol)  ,9))
@@ -73,7 +81,7 @@ hyperparamApproxPost$collecTau <- resEstimVBEM$collecTau
 mydata <- list(collecNetworks = collecNetworks, M= M, nbNodes = nbNodes)
 
 
-HSample <- rParamZ(2, hyperparam = hyperparamPrior , emissionDist, model ,nbNodes)
+HSample <- rParamZ(2, hyperparam = hyperparamApproxPost , emissionDist, model ,nbNodes)
 mc <- 1
 H.mc.sim <- list(connectParam = HSample$connectParamSample[,,mc])
 H.mc.sim$Z <- lapply(1:M, function(m){list(row = HSample$ZSample[[m]]$row[,,mc],col = HSample$ZSample[[m]]$col[,,mc])})
@@ -87,7 +95,7 @@ if (model == 'piColBipartiteSBM'){
   
 ###################### Estim avec Kcol Krow true
 
-paramsMCMC = list(nbIterMCMC = 20000)
+paramsMCMC = list(nbIterMCMC = 5000)
 H.mc.init <- H.mc.sim
 paramsMCMC$opEchan = list(connectParam = TRUE, blockProp = TRUE, ZRow = TRUE, ZCol = TRUE)
 if (!paramsMCMC$opEchan$connectParam){H.mc.init$connectParam <- connectParamTrue$mean}
@@ -97,9 +105,9 @@ if(!paramsMCMC$opEchan$ZCol){for (m in 1:M){H.mc.init$Z[[m]]$col <-mySampler[[m]
 
 
 
-resMCMC <- MCMCKernel(data = mydata, H.mc.init, alpha.t = 1, hyperparApproxPost, hyperparamPrior, emissionDist = 'bernoulli', model = 'iidColBipartiteSBM',paramsMCMC, opSave=TRUE)
+resMCMC <- MCMCKernel(data = mydata, H.mc.init, alpha.t = 1, hyperparApproxPost, hyperparamPrior, emissionDist = 'bernoulli', model = 'piColBipartiteSBM',paramsMCMC, opSave=TRUE)
 
-burnin  = 15000 
+burnin  = 2500 
 extr <- burnin:paramsMCMC$nbIterMCMC
 
 m = sample(1:M,1)
@@ -107,42 +115,70 @@ apply(resMCMC$seqZ[[m]]$row[,,extr],c(1,2),mean)[1:10,]
 resMCMC$seqZ[[m]]$row[,,1][1:10,]
 hyperparamApproxPost$collecTau[[m]]$row[1:10,]
 
-H.mc$blockProp$row
 
 apply(resMCMC$seqZ[[m]]$col[,,extr],c(1,2),mean)[1:10,]
 resMCMC$seqZ[[m]]$col[,,1][1:10,]
 hyperparamApproxPost$collecTau[[m]]$col[1:10,]
 
-par(mfrow=c(1,1))
+par(mfrow=c(KRow,KCol))
 for (k in 1:KRow){
   for (l in 1:KCol){
-    if ((k ==1) & (l==1)){
+ #   if ((k ==1) & (l==1)){
       plot(density(resMCMC$seqConnectParam[k,l,extr]),main='alpha',xlim=c(0,1))
-    }else{
-      lines(density(resMCMC$seqConnectParam[k,l,extr]))  
-      }
+#    }else{
+#      lines(density(resMCMC$seqConnectParam[k,l,extr]))  
+#      }
     curve(dbeta(x,hyperparamApproxPost$connectParam$alpha[k,l],hyperparamApproxPost$connectParam$beta[k,l]),col='red',add=TRUE)
+    abline(v = connectParamTrue$mean[k,l])
   }
 }
 
-par(mfrow=c(1,1))
-for (k in 1:KRow){
-  if (k ==1){plot(density(resMCMC$seqBlockProp$row[k,extr]),main='pi_k',xlim = c(0,1))
+#------------------------------------ 
+if(model=="iidColBipartiteSBM"){
+  par(mfrow=c(1,1))
+  for (k in 1:KRow){
+    if (k ==1){plot(density(resMCMC$seqBlockProp$row[k,extr]),main='pi_k',xlim = c(0,1))
+      }else{
+        lines(density(resMCMC$seqBlockProp$row[k,extr]))
+    }  
+    curve(dbeta(x,hyperparamApproxPost$blockProp$row[k], sum(hyperparamApproxPost$blockProp$row)-hyperparamApproxPost$blockProp$row[k]),col='red',add=TRUE)
+    abline(v = blockPropTrue$row[1,k])
+  }
+  
+  for (l in 1:KCol){
+    if (l ==1){plot(density(resMCMC$seqBlockProp$col[l,extr]),main='rho_k',xlim = c(0,1))
     }else{
-      lines(density(resMCMC$seqBlockProp$row[k,extr]))
-  }  
-  curve(dbeta(x,hyperparamApproxPost$blockProp$row[k], sum(hyperparamApproxPost$blockProp$row)-hyperparamApproxPost$blockProp$row[k]),col='red',add=TRUE)
-  abline(v = blockPropTrue$row[1,k])
+      lines(density(resMCMC$seqBlockProp$col[l,extr]))
+    }  
+    curve(dbeta(x,hyperparamApproxPost$blockProp$col[l], sum(hyperparamApproxPost$blockProp$col)-hyperparamApproxPost$blockProp$col[l]),col='red',add=TRUE)
+    abline(v = blockPropTrue$col[1,l])
+  }
+  
 }
 
-par(mfrow=c(1,1))
-for (l in 1:KCol){
-  if (l ==1){plot(density(resMCMC$seqBlockProp$col[l,extr]),main='rho_k',xlim = c(0,1))
-  }else{
-    lines(density(resMCMC$seqBlockProp$col[l,extr]))
+if(model=="piColBipartiteSBM"){
+  par(mfrow=c(floor(M/2)+1,2))
+  for (m in 1:M){
+    for (k in 1:KRow){
+      if (k ==1){plot(density(resMCMC$seqBlockProp$row[m,k,extr]),main='pi_k',xlim = c(0,1))
+    }else{
+      lines(density(resMCMC$seqBlockProp$row[m,k,extr]))
+    }  
+    curve(dbeta(x,hyperparamApproxPost$blockProp$row[m,k], sum(hyperparamApproxPost$blockProp$row[m,])-hyperparamApproxPost$blockProp$row[m,k]),col='red',add=TRUE)
+    abline(v = blockPropTrue$row[m,k])
+    }
   }  
-  curve(dbeta(x,hyperparamApproxPost$blockProp$col[l], sum(hyperparamApproxPost$blockProp$col)-hyperparamApproxPost$blockProp$col[l]),col='red',add=TRUE)
-  abline(v = blockPropTrue$col[1,l])
+  par(mfrow=c(floor(M/2)+1,2))
+  for (m in 1:M){
+    for (k in 1:KCol){
+      if (k ==1){plot(density(resMCMC$seqBlockProp$col[m,k,extr]),main='pi_k',xlim = c(0,1))
+      }else{
+        lines(density(resMCMC$seqBlockProp$col[m,k,extr]))
+      }  
+      curve(dbeta(x,hyperparamApproxPost$blockProp$col[m,k], sum(hyperparamApproxPost$blockProp$col[m,])-hyperparamApproxPost$blockProp$col[m,k]),col='red',add=TRUE)
+      abline(v = blockPropTrue$col[m,k])
+    }
+  }
 }
 
 
