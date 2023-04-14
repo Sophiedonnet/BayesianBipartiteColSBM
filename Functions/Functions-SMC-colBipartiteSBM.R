@@ -1,4 +1,4 @@
-
+library(parallel)
 
 #-----------------------------------------------------------------
 # Computes ESS from unnormalized log-weights
@@ -34,7 +34,7 @@ FindAlpha.cESS <- function(W.t.minus.1, log.rho, cESS.rate, alpha.t.minus.1, tol
     }
     
     alpha.new <- (alpha.left + alpha.right)/2; cESS <- ComputecESS(W.t.minus.1,w.increm.t=exp((alpha.new-alpha.t.minus.1) * (log.rho-mean(log.rho))))
-    if (opSave == TRUE) {cESS_vec <- c(cESS_vec,cESS); alpha_vec <- c(alpha_vec,alpha.new)}
+    if (op.save == TRUE) {cESS_vec <- c(cESS_vec,cESS); alpha_vec <- c(alpha_vec,alpha.new)}
     diff <- 2 * tol; niter = 0
     while ((diff > tol) & (alpha.new > alpha.t.minus.1 + 1e-4) & (niter < 1e3)) {
       niter = niter + 1
@@ -42,7 +42,7 @@ FindAlpha.cESS <- function(W.t.minus.1, log.rho, cESS.rate, alpha.t.minus.1, tol
       alpha.new <- (alpha.left + alpha.right)/2; cESS <- ComputecESS(W.t.minus.1,w.increm.t=exp((alpha.new-alpha.t.minus.1) * (log.rho-mean(log.rho))))
       diff <- abs(cESS - threshold)
       # cat(alpha.new, cESS, diff, '\n')
-      if (opSave == TRUE) {cESS_vec <- c(cESS_vec,cESS);alpha_vec<- c(alpha_vec,alpha.new)}
+      if (op.save == TRUE) {cESS_vec <- c(cESS_vec,cESS);alpha_vec<- c(alpha_vec,alpha.new)}
     }
     
   }

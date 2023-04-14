@@ -144,3 +144,57 @@ Estep <- function(collecNetworks,M, nRow,nCol,KRow,KCol,collecTau,hyperparamPost
   return(list(collecTau = collecTau,noConvergence  = noConvergence))
 }
 
+
+############################## log marg likelihood
+computeLogLikMarg_VB <- function(collecNetworks, collecTau, hyperparamPrior, emissionDist, model){
+  
+  collecZMAP <- lapply(collecTau,function(tau){
+    indZ <- tau
+    indZ$row <- t(sapply(1:nrow(tau$row),function(i){u <- 0*tau$row[i,]; u[which.max(tau$row[i,])]=1; return(u)}))
+    if(min(dim(indZ$row))==1){indZ$row = matrix(indZ$row,ncol=1)}
+    indZ$col <- t(sapply(1:nrow(tau$col),function(i){u <- 0*tau$col[i,]; u[which.max(tau$col[i,])]=1; return(u)}))
+    if(min(dim(indZ$col))==1){indZ$col = matrix(indZ$col,ncol=1)}
+    return(indZ)
+  })
+  
+  if(emissionDist =='bernoulli'){
+    S1 <- lapply(1:length(collecNetworks),function(m){t(collecZMAP[[m]]$row)%*% collecNetworks[[m]] %*% collecZMAP[[m]]$col})
+    S0 <- lapply(1:length(collecNetworks),function(m){t(collecZMAP[[m]]$row)%*% (1-collecNetworks[[m]]) %*% collecZMAP[[m]]$col})
+    
+    ahat <- Reduce('+',S1)
+    bhat <- Reduce('+',S0)
+    lprobYZ <- sum(lbeta(ahat+hyperparamPrior$connectParam$alpha,bhat+hyperparamPrior$connectParam$beta) -lbeta(hyperparamPrior$connectParam$alpha,hyperparamPrior$connectParam$beta))
+  }
+  
+  if(model=='poisson'){
+    lprobYZ  = NA
+  }
+  
+  if(model == 'piColBipartiteSBM'){
+    lprobZ <- Reduce("+", 
+                     lapply(1:length(collecNetworks),
+                            function(m){
+                              dPostRow <- apply(collecZMAP[[m]]$row,2,sum) 
+                              LRow  <- mylBetaFunction(dPostRow + hyperparamPrior$blockProp$row[m,]) - mylBetaFunction(hyperparamPrior$blockProp$row[m,])
+                              dPostCol <- apply(collecZMAP[[m]]$col,2,sum) 
+                              LCol  <- mylBetaFunction(dPostCol + hyperparamPrior$blockProp$col[m,]) - mylBetaFunction(hyperparamPrior$blockProp$col[m,])
+                              return(LRow  +  LCol)
+                            }
+                     )
+    )
+  }
+  if(model == 'iidColBipartiteSBM'){
+    dPostRow <- rowSums(sapply(1:length(collecNetworks),function(m){apply(collecZMAP[[m]]$row,2,sum)}))
+    dPostCol <- rowSums(sapply(1:length(collecNetworks),function(m){apply(collecZMAP[[m]]$col,2,sum)}))
+    LRow  <- mylBetaFunction(dPostRow + hyperparamPrior$blockProp$row) - mylBetaFunction(hyperparamPrior$blockProp$row)
+    LCol  <- mylBetaFunction(dPostCol + hyperparamPrior$blockProp$col) - mylBetaFunction(hyperparamPrior$blockProp$col)
+    lprobZ <-  LRow  +  LCol
+  }
+  
+  
+  res <- c(lprobYZ,lprobZ)
+  names(res) =c('lprobYZ','lprobZ')
+  return(res)
+  
+}
+

@@ -111,6 +111,7 @@ condLogLik = function(data, H.mc,emissionDist){
 
 likelihood <- function(data, HSample,emissionDist){
   # cat('likelihood ')
+  MC <- dim(HSample$connectParamSample)[3]
  
   #------------------------------------
   condloglik.sample = vapply(1:MC, function(mc){
