@@ -147,7 +147,9 @@ SMCColBipartiteSBM<- function(data,hyperparamPrior,hyperparamApproxPost, emissio
   #--------------------- 
   alpha.vec <- c(alpha.t);
   vec.log.ratio.Z <- c(0); 
-  Vec.resampling = c(TRUE)
+  MI <- vapply(1:M,function(m){mutualInformationZ(list(HSample$ZSample[[m]]))}, 1)
+  print(MI)
+  vec.resampling <- c(TRUE)
 
   if (opSave == TRUE) {
     RES.t <- list(); 
@@ -199,7 +201,7 @@ SMCColBipartiteSBM<- function(data,hyperparamPrior,hyperparamApproxPost, emissio
     ESS.t <- 1/sum((W.t)^2)
     if (is.nan(ESS.t)) {print("Error in ESS.t. Break"); t = t - 1; save.image(file = "fail.Rdata"); break}
     resampling.step <- (ESS.t < MC * ESS.rate)
-    Vec.resampling <- c(Vec.resampling,resampling.step)
+    vec.resampling <- c(vec.resampling,resampling.step)
     
     if (resampling.step == TRUE) {
       Resample <- sample(1:MC, replace = T, prob = W.t)
@@ -246,6 +248,9 @@ SMCColBipartiteSBM<- function(data,hyperparamPrior,hyperparamApproxPost, emissio
       save(RES.t,file = 'encours.Rdata');
     }
     
+    MI.t <- vapply(1:M,function(m){mutualInformationZ(list(HSample$ZSample[[m]]))}, 1)
+    MI <- rbind(MI,MI.t)
+    
     #------ Computation avec the log.rho to compute the w.increment.t  and U for marginal likelihood --------------------------------
     
     logPrior.sample <- logPrior(HSample,M,MC, hyperparamPrior,emissionDist,model)
@@ -273,7 +278,7 @@ SMCColBipartiteSBM<- function(data,hyperparamPrior,hyperparamApproxPost, emissio
    
     # cat('Fin moments \n')
     
-    if (op.print == TRUE) {print(c(t,alpha.t,ESS.t,sum(vec.log.ratio.Z)))}
+    if (op.print == TRUE) {print(c(t,alpha.t,ESS.t,sum(vec.log.ratio.Z),MI.t))}
     #if (op.print == TRUE) {print(c(t,alpha,ESS.t,U.t))}
   }### ----------------------------------------------------------- end  of algorithm
   
@@ -293,21 +298,50 @@ SMCColBipartiteSBM<- function(data,hyperparamPrior,hyperparamApproxPost, emissio
   RES$vec.log.ratio.Z <- vec.log.ratio.Z;
   #RES$vec.ratio.Z.2 <- vec.ratio.Z.2;
   RES$KL <- KL
-  RES$Vec.resampling <- Vec.resampling
+  RES$vec.resampling <- vec.resampling
   RES$U <- U
-  
+  RES$MI <- MI
   
   return(RES)
 }
 
+#------------------------------------------- 
 #------------------------------------------------------- 
+#--------------------------------------------------- 
+transfZsampleIntoMatrix = function(ZSample){
+
+  M <- length(ZSample)
+  MC <- dim(ZSample[[1]]$row)[3]
+  KRow <- dim(ZSample[[1]]$row)[2]
+  KCol <- dim(ZSample[[1]]$col)[2]
+  
+  listMatZ <- list() 
+    
+  for (m in 1:M){
+    
+    ZSample.m <- ZSample[[m]]
+    nrow.m <- nrow(ZSample[[m]]$row)
+    ncol.m <- nrow(ZSample[[m]]$col)
+    
+    matZ.m <- matrix(0,MC,nrow.m + ncol.m)
+    for (mc in 1:MC){
+      matZ.m[mc,] <- c(ZSample.m$row[,,mc]%*% matrix(1:KRow,ncol=1), ZSample.m$col[,,mc]%*% matrix(1:KCol,ncol=1))
+    }
+    listMatZ[[m]] <- matZ.m
+  }
+  matZ<- do.call(cbind,listMatZ)
+  return(matZ)
+}
+
 
 mutualInformationZ  = function(ZSample){
-  if (!is.matrix(Zsample)) {stop('Sample must be a Matrix with M rows if M is the size of the sample')}
-  M <- nrow(Zsample)
-  n <- ncol(Zsample)
-  H.ind <- sum( sapply(1:n,function(i){freq_i = table(Zsample[,i])/M; return(sum(freq_i*log(freq_i)))}))
-  U <- plyr::count(Zsample)$freq/M
+  
+  matZ <- transfZsampleIntoMatrix(ZSample)
+  if (!is.matrix(matZ)) {stop('Sample must be a Matrix with MC rows if MC is the size of the sample')}
+  MC <- nrow(matZ)
+  n <- ncol(matZ)
+  H.ind <- sum( sapply(1:n,function(i){freq_i = table(matZ[,i])/MC; return(sum(freq_i*log(freq_i)))}))
+  U <- plyr::count(matZ)$freq/MC
   H.conj <- sum(U * log(U))
   return(H.conj  - H.ind)
 }
