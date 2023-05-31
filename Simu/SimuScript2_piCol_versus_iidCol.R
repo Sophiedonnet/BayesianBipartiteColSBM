@@ -13,7 +13,7 @@ emissionDist = 'bernoulli'
 ###############################################################
 ######## LOAD data
 ###############################################################
-load(paste0(getwd(),'/Simu/RES_SIMU1/data_simu1_1.Rdata'))
+load(paste0(getwd(),'/Simu/RES_SIMU1/data_simu1_2.Rdata'))
 
 collecNetworks <- mydata$collecNetworks
 M <- mydata$M

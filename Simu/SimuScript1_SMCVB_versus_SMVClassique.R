@@ -114,7 +114,7 @@ estimOptionsSMC$NB.iter.max  <- Inf # Inf
 estimOptionsSMC$op.SMC.classic <- FALSE
 resSMC_VB_piCol <- SMCColBipartiteSBM(data = mydata,hyperparamPrior_piCol,hyperparamApproxPost_piCol, emissionDist, model = 'piColBipartiteSBM', estimOptionsSMC)
 
-save(model,hyperparamApproxPost_piCol, hyperparamPrior_piCol, resSMC_VB_piCol, estimOptionsSMC ,file=paste0(where_save_res,'/res_simu1_1_SMC_VB_piCol.Rdata'))
+save(model,hyperparamApproxPost_piCol, hyperparamPrior_piCol, resSMC_VB_piCol, estimOptionsSMC ,file=paste0(where_save_res,'/res_simu1_2_SMC_VB_piCol.Rdata'))
 
 
 
