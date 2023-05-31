@@ -1,23 +1,40 @@
 rm(list=ls())
-#setwd('~/WORK_ALL/RECHERCHE/TRAVAUX_RECHERCHE/Barbillon-Chabert/BayesianBipartiteColSBM/')
+#------------------ set wd
 if(Sys.info()[[4]]=='sophie-Latitude-5310'){
   setwd('/home/sophie/WORK_LOCAL/RECHERCHE/TRAVAUX_DE_RECHERCHE/Barbillon-Chabert/BayesianBipartiteColSBM')
 }
+if(Sys.info()[[4]]=="donnet-Precision-Tower-5810"){
+  setwd('/home/donnet/WORK_ALL/RECHERCHE/TRAVAUX_RECHERCHE/Barbillon-Chabert/BayesianBipartiteColSBM')
+}
 
+#--------------- packages and functions
 library(sbm)
 library(gtools)
+library(DescTools)
 sapply(list.files(paste0(getwd(),'/Functions'),full.names = TRUE), source)
 
+###############################################################
+#######################        " TEST MI  functions 
+###############################################################
 
 
+MC = 1000
+n  = 10
+matZ  = matrix(0,n,MC)
+for(i in 1:n){
+  K = sample(1:5,1)
+  matZ[i,] <- t(rmultinom(MC,1,rdirichlet(1,rep(1,K))))%*%matrix(1:K,ncol=1) 
+}
+mutualInformation(matZ)  
+MutInf(matZ[1,], matZ[2,], base = 2)
 
 
 ###############################################################
-######## MODELS 
+########  TEST onf my models MODELS 
 ###############################################################
 
 emissionDist = 'bernoulli'
-model = 'piColBipartiteSBM'
+model = 'iidColBipartiteSBM'
 
 
 ###########################################################################################
@@ -47,20 +64,27 @@ oCol <- order(colSums(connectParamTrue$mean[,]),decreasing = TRUE)
 oRow <- order(rowSums(connectParamTrue$mean[,]),decreasing = TRUE)
 connectParamTrue$mean <- connectParamTrue$mean[oRow,oCol]
 
+if(model=="iidColBipartiteSBM"){
+  blockPropTrue$row <- blockPropTrue$row[1,]
+  blockPropTrue$col <- blockPropTrue$col[1,]
+}
+  
+  
+
 #-------  sizes of networks
-nbNodes <- matrix(sample(20*c(5:10),M*2,replace = TRUE),M,2)
-
-#nbNodes[1,] = c(150,200)
-#nbNodes[5,] = c(30,20)
-
+nbNodes <- matrix(sample(15:35,M*2,replace = TRUE),M,2)
 #---------  SIMULATION
-mySampler <- lapply(1:M, function(m){sampleBipartiteSBM(nbNodes = nbNodes[m,],  list(row=blockPropTrue$row[m,],col=blockPropTrue$col[m,]),  connectParamTrue)})
+if (model =='iidColBipartiteSBM'){
+  mySampler <- lapply(1:M, function(m){sampleBipartiteSBM(nbNodes = nbNodes[m,],  list(row=blockPropTrue$row,col=blockPropTrue$col),  connectParamTrue)})
+}else{
+  mySampler <- lapply(1:M, function(m){sampleBipartiteSBM(nbNodes = nbNodes[m,],  list(row=blockPropTrue$row[m,],col=blockPropTrue$col[m,]),  connectParamTrue)})
+}
 collecNetworks <- lapply(mySampler,function(l){l$networkData})
 mydata <- list(collecNetworks = collecNetworks, M= M, nbNodes = nbNodes)
 
 
 ##############################################################
-#---------- load data
+#---------- VEM
 ##############################################################
  
 
@@ -77,7 +101,11 @@ print(c(KRow,KCol))
 ###################################################### 
 #---------------  Prior distribution
 ######################################################
-hyperparamPrior_piCol <- setHyperparamPrior(M,KRow,KCol, emissionDist, model)
+hyperparamPrior <- setHyperparamPrior(M,KRow,KCol, emissionDist, model)
+HSample <- rParamZ(MC=1000, hyperparamPrior, emissionDist, model,nbNodes);
+ZSample <-  HSample$ZSample
+MIPrior <- myMutualInformationZ(ZSample,1:5)
+MIPrior
 
 ###########################################################################################
 #------------------ VBEM  + SMC -VBEM 
@@ -91,8 +119,8 @@ estimOptionsVBEM <- list(maxIterVB = 1000,
                          valStopCritVE = 10^-5,
                          valStopCritVB = 10^-5)
 
-resEstimVBEM_piCol  <- VBEMBipartiteColSBM(collecNetworks,hyperparamPrior_piCol,collecTau_init,estimOptions = estimOptionsVBEM, emissionDist, model='piColBipartiteSBM')
-LogLikMarg_VB_piCol <- sum(computeLogLikMarg_VB(collecNetworks,resEstimVBEM_piCol$collecTau,hyperparamPrior_piCol,emissionDist,model))
+resEstimVBEM  <- VBEMBipartiteColSBM(collecNetworks,hyperparamPrior,collecTau_init,estimOptions = estimOptionsVBEM, emissionDist, model)
+LogLikMarg_VB <- sum(computeLogLikMarg_VB(collecNetworks,resEstimVBEM$collecTau,hyperparamPrior,emissionDist,model))
 
 
 
@@ -100,19 +128,16 @@ whereSaveResEstimVB <- paste0(getwd(),'/Simu/Res/',model,'/VB/resVB_',mySeed,'.R
 #save(initBipartite,estimOptionsVBEM, resEstimVBEM_piCol,estimOptionsVBEM,hyperparamPrior_piCol,file=whereSaveResEstimVB)
 
 #------------------ Set ApproxPost
-hyperparamApproxPost_piCol <- resEstimVBEM_piCol$hyperparamPost
-hyperparamApproxPost_piCol$collecTau <- resEstimVBEM_piCol$collecTau
+hyperparamApproxPost <- resEstimVBEM$hyperparamPost
+hyperparamApproxPost$collecTau <- resEstimVBEM$collecTau
 
-#------------------  SMC  - VEM
-
-
-HSample <- rParamZ(MC=1000, hyperparamApproxPost_piCol, emissionDist, model,nbNodes);
+HSample <- rParamZ(MC=10000, hyperparamApproxPost, emissionDist, model,nbNodes);
 ZSample <-  HSample$ZSample
-MI <- mutualInformationZ(list(HSample$ZSample[[3]]))
-MI
+MIApproxPost <- myMutualInformationZ(HSample$ZSample,1:5)
+MIApproxPost
 
 estimOptionsSMC = list()
-estimOptionsSMC$paramsMCMC <- list(nbIterMCMC=2)  
+estimOptionsSMC$paramsMCMC <- list(nbIterMCMC=10)  
 estimOptionsSMC$MC <- 1000
 estimOptionsSMC$ESS.rate <- 0.9
 estimOptionsSMC$cESS.rate <- 0.9
@@ -122,5 +147,9 @@ estimOptionsSMC$op.print<- TRUE
 estimOptionsSMC$NB.iter.max  <- Inf # Inf
 estimOptionsSMC$op.SMC.classic <- FALSE
 
-resSMC_VB_piCol <- SMCColBipartiteSBM(data = mydata,hyperparamPrior_piCol,hyperparamApproxPost_piCol, emissionDist, model , estimOptionsSMC)
+resSMC_VB <- SMCColBipartiteSBM(data = mydata,hyperparamPrior,hyperparamApproxPost, emissionDist, model, estimOptionsSMC)
+
+List.matZ.0 <- transfZsampleIntoMatrix(resSMC_VB$HSample.0$ZSample)
+List.matZ <- transfZsampleIntoMatrix(resSMC_VB$HSample_end$ZSample)
+
 

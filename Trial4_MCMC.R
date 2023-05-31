@@ -1,24 +1,31 @@
 rm(list=ls())
+#------------------ set wd
+if(Sys.info()[[4]]=='sophie-Latitude-5310'){
+  setwd('/home/sophie/WORK_LOCAL/RECHERCHE/TRAVAUX_DE_RECHERCHE/Barbillon-Chabert/BayesianBipartiteColSBM')
+}
+if(Sys.info()[[4]]=="donnet-Precision-Tower-5810"){
+  setwd('/home/donnet/WORK_ALL/RECHERCHE/TRAVAUX_RECHERCHE/Barbillon-Chabert/BayesianBipartiteColSBM')
+}
+
+#--------------- packages and functions
 library(sbm)
 library(gtools)
+library(DescTools)
+sapply(list.files(paste0(getwd(),'/Functions'),full.names = TRUE), source)
 
-source('Functions/utils.R')
-source('Functions/VBEMBipartiteColSBM.R')
-source('Functions/initializationCollecTau.R')
-source('Functions/Functions-SMC.R')
-source('Functions/Functions-colBipartiteSBM.R')
-source('Functions/Functions-checks.R')
-source('Functions/Function-MCMC-colBipartiteSBM.R')
+
+
 
 emissionDist = 'bernoulli'
 model = 'piColBipartiteSBM'
 #model = 'iidColBipartiteSBM'
+
 ###########################################################################################
 ############# simulation avec iid colSBM mais certains très petits réseaux. 
 #############################################################################################
 
 
-M = 5
+M = 4
 KRow = 4
 KCol = 3
 #-----  block proportions simul iidColSBM 
@@ -35,12 +42,12 @@ blockPropTrue$col[1,] <- rep(1/KCol,KCol)
 print(blockPropTrue)
 
 #-----  connectivity matrix
-connectParamTrue <- list(mean = round( matrix(rbeta(KRow*KCol,1/1.1,1/1.1), KRow, KCol)  ,9))
+connectParamTrue <- list(mean = round(matrix(rbeta(KRow*KCol,1/1,1/1), KRow, KCol)  ,2))
 oCol <- order(colSums(connectParamTrue$mean[,]),decreasing = TRUE)
 oRow <- order(rowSums(connectParamTrue$mean[,]),decreasing = TRUE)
 connectParamTrue$mean <- connectParamTrue$mean[oRow,oCol]
 #-------  sizes of networks
-nbNodes <- matrix(sample(10*c(6:10),M*2,replace = TRUE),M,2)
+nbNodes <- matrix(sample(10*c(5:10),M*2,replace = TRUE),M,2)
 #nbNodes[1,] = c(150,200)
 #nbNodes[5,] = c(30,20)
 
@@ -51,6 +58,13 @@ collecNetworks <- lapply(mySampler,function(l){l$networkData})
 
 #--------------- init CollecTau
 initBipartite <- lapply(collecNetworks,estimateBipartiteSBM)
+
+for(m in 1:M){
+
+  b.m <- which( (initBipartite[[m]]$storedModels[,3]==KRow) & (initBipartite[[m]]$storedModels[,4]==KCol))
+  print(c(m,b.m))
+  if (length(b.m)>0){initBipartite[[m]]$setModel(b.m)}
+}
 myRef <- which.max(rowSums(t(sapply(initBipartite,function(m){m$nbBlocks}))))
 collecTau_init <- initCollecTau(initBipartite,ref = myRef)
 KRow <- initBipartite[[myRef]]$nbBlocks[1]
@@ -81,7 +95,7 @@ hyperparamApproxPost$collecTau <- resEstimVBEM$collecTau
 mydata <- list(collecNetworks = collecNetworks, M= M, nbNodes = nbNodes)
 
 
-HSample <- rParamZ(2, hyperparam = hyperparamApproxPost , emissionDist, model ,nbNodes)
+HSample <- rParamZ(2, hyperparam = hyperparamPrior , emissionDist, model ,nbNodes)
 mc <- 1
 H.mc.sim <- list(connectParam = HSample$connectParamSample[,,mc])
 H.mc.sim$Z <- lapply(1:M, function(m){list(row = HSample$ZSample[[m]]$row[,,mc],col = HSample$ZSample[[m]]$col[,,mc])})
@@ -95,7 +109,7 @@ if (model == 'piColBipartiteSBM'){
   
 ###################### Estim avec Kcol Krow true
 
-paramsMCMC = list(nbIterMCMC = 5000)
+paramsMCMC = list(nbIterMCMC = 10000)
 H.mc.init <- H.mc.sim
 paramsMCMC$opEchan = list(connectParam = TRUE, blockProp = TRUE, ZRow = TRUE, ZCol = TRUE)
 if (!paramsMCMC$opEchan$connectParam){H.mc.init$connectParam <- connectParamTrue$mean}
@@ -104,8 +118,7 @@ if(!paramsMCMC$opEchan$ZRow){for (m in 1:M){H.mc.init$Z[[m]]$row <-mySampler[[m]
 if(!paramsMCMC$opEchan$ZCol){for (m in 1:M){H.mc.init$Z[[m]]$col <-mySampler[[m]]$indMemberships$col}}
 
 
-
-resMCMC <- MCMCKernel(data = mydata, H.mc.init, alpha.t = 1, hyperparApproxPost, hyperparamPrior, emissionDist = 'bernoulli', model = 'piColBipartiteSBM',paramsMCMC, opSave=TRUE)
+resMCMC <- MCMCKernel(mydata, H.mc.init, alpha.t = 1, hyperparamPrior,hyperparamApproxPost = NULL, emissionDist = 'bernoulli', model =  'piColBipartiteSBM',paramsMCMC, opSave= TRUE)
 
 burnin  = 2500 
 extr <- burnin:paramsMCMC$nbIterMCMC
@@ -124,12 +137,12 @@ par(mfrow=c(KRow,KCol))
 for (k in 1:KRow){
   for (l in 1:KCol){
  #   if ((k ==1) & (l==1)){
-      plot(density(resMCMC$seqConnectParam[k,l,extr]),main='alpha',xlim=c(0,1))
+      plot(density(resMCMC$seqConnectParam[k,l,extr]),main='alpha',xlim=c(0,1),col='green')
 #    }else{
 #      lines(density(resMCMC$seqConnectParam[k,l,extr]))  
 #      }
     curve(dbeta(x,hyperparamApproxPost$connectParam$alpha[k,l],hyperparamApproxPost$connectParam$beta[k,l]),col='red',add=TRUE)
-    abline(v = connectParamTrue$mean[k,l])
+    abline(v = connectParamTrue$mean)
   }
 }
 
@@ -137,18 +150,18 @@ for (k in 1:KRow){
 if(model=="iidColBipartiteSBM"){
   par(mfrow=c(1,1))
   for (k in 1:KRow){
-    if (k ==1){plot(density(resMCMC$seqBlockProp$row[k,extr]),main='pi_k',xlim = c(0,1))
+    if (k ==1){plot(density(resMCMC$seqBlockProp$row[k,extr]),main='pi_k',xlim = c(0,1),col='green')
       }else{
-        lines(density(resMCMC$seqBlockProp$row[k,extr]))
+        lines(density(resMCMC$seqBlockProp$row[k,extr]),col='green')
     }  
     curve(dbeta(x,hyperparamApproxPost$blockProp$row[k], sum(hyperparamApproxPost$blockProp$row)-hyperparamApproxPost$blockProp$row[k]),col='red',add=TRUE)
     abline(v = blockPropTrue$row[1,k])
   }
   
   for (l in 1:KCol){
-    if (l ==1){plot(density(resMCMC$seqBlockProp$col[l,extr]),main='rho_k',xlim = c(0,1))
+    if (l ==1){plot(density(resMCMC$seqBlockProp$col[l,extr]),main='rho_k',xlim = c(0,1),col='green')
     }else{
-      lines(density(resMCMC$seqBlockProp$col[l,extr]))
+      lines(density(resMCMC$seqBlockProp$col[l,extr]),col='green')
     }  
     curve(dbeta(x,hyperparamApproxPost$blockProp$col[l], sum(hyperparamApproxPost$blockProp$col)-hyperparamApproxPost$blockProp$col[l]),col='red',add=TRUE)
     abline(v = blockPropTrue$col[1,l])
@@ -160,9 +173,9 @@ if(model=="piColBipartiteSBM"){
   par(mfrow=c(floor(M/2)+1,2))
   for (m in 1:M){
     for (k in 1:KRow){
-      if (k ==1){plot(density(resMCMC$seqBlockProp$row[m,k,extr]),main='pi_k',xlim = c(0,1))
+      if (k ==1){plot(density(resMCMC$seqBlockProp$row[m,k,extr]),main='pi_k',xlim = c(0,1),col='green')
     }else{
-      lines(density(resMCMC$seqBlockProp$row[m,k,extr]))
+      lines(density(resMCMC$seqBlockProp$row[m,k,extr]),col='green')
     }  
     curve(dbeta(x,hyperparamApproxPost$blockProp$row[m,k], sum(hyperparamApproxPost$blockProp$row[m,])-hyperparamApproxPost$blockProp$row[m,k]),col='red',add=TRUE)
     abline(v = blockPropTrue$row[m,k])
@@ -171,9 +184,9 @@ if(model=="piColBipartiteSBM"){
   par(mfrow=c(floor(M/2)+1,2))
   for (m in 1:M){
     for (k in 1:KCol){
-      if (k ==1){plot(density(resMCMC$seqBlockProp$col[m,k,extr]),main='pi_k',xlim = c(0,1))
+      if (k ==1){plot(density(resMCMC$seqBlockProp$col[m,k,extr]),main='pi_k',xlim = c(0,1),col='green')
       }else{
-        lines(density(resMCMC$seqBlockProp$col[m,k,extr]))
+        lines(density(resMCMC$seqBlockProp$col[m,k,extr]),col='green')
       }  
       curve(dbeta(x,hyperparamApproxPost$blockProp$col[m,k], sum(hyperparamApproxPost$blockProp$col[m,])-hyperparamApproxPost$blockProp$col[m,k]),col='red',add=TRUE)
       abline(v = blockPropTrue$col[m,k])

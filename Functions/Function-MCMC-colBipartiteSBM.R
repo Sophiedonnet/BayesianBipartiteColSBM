@@ -39,10 +39,9 @@ MCMCKernel <- function(data, H.mc.init, alpha.t, hyperparamPrior,hyperparamAppro
         pi.row.m <- hyperparamPrior$blockProp$row[m,]
         pi.col.m <- hyperparamPrior$blockProp$col[m,]
       }
-    hyperparamApproxPost$collecTau[[m]]$row <- matrix( pi.row.m ,nbNodes[m,1],KRow,byrow = TRUE)
-    hyperparamApproxPost$collecTau[[m]]$col <- matrix( pi.col.m ,nbNodes[m,2],KCol,byrow = TRUE)
+    hyperparamApproxPost$collecTau[[m]]$row <- matrix(pi.row.m ,nbNodes[m,1],KRow,byrow = TRUE)
+    hyperparamApproxPost$collecTau[[m]]$col <- matrix(pi.col.m ,nbNodes[m,2],KCol,byrow = TRUE)
     }
-    
   }
   B <- paramsMCMC$nbIterMCMC
   if(is.null(paramsMCMC$opEchan)){
@@ -128,7 +127,7 @@ MCMCKernel <- function(data, H.mc.init, alpha.t, hyperparamPrior,hyperparamAppro
     ################################################
     ############# simulation of Z 
     ################################################
-    
+    #browser
     orderNetworks <-  sample(1:M,M,replace = FALSE)
     for (m in orderNetworks){ # for all networks
       
