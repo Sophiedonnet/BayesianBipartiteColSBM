@@ -18,7 +18,7 @@ sapply(list.files(paste0(getwd(),'/Functions'),full.names = TRUE), source)
 
 emissionDist = 'bernoulli'
 model = 'piColBipartiteSBM'
- 
+
 
 ###########################################################################################
 ############# simulation 
@@ -46,8 +46,7 @@ connectParamTrue <- list(mean = round( matrix(rbeta(KRow*KCol,1/1.01,1/1.01), KR
 oCol <- order(colSums(connectParamTrue$mean[,]),decreasing = TRUE)
 oRow <- order(rowSums(connectParamTrue$mean[,]),decreasing = TRUE)
 connectParamTrue$mean <- connectParamTrue$mean[oRow,oCol]
-rm(oCol)
-rm(oRow)
+
 #-------  sizes of networks
 nbNodes <- matrix(sample(20*c(5:10),M*2,replace = TRUE),M,2)
 
@@ -57,29 +56,13 @@ nbNodes <- matrix(sample(20*c(5:10),M*2,replace = TRUE),M,2)
 #---------  SIMULATION
 mySampler <- lapply(1:M, function(m){sampleBipartiteSBM(nbNodes = nbNodes[m,],  list(row=blockPropTrue$row[m,],col=blockPropTrue$col[m,]),  connectParamTrue)})
 collecNetworks <- lapply(mySampler,function(l){l$networkData})
-
 mydata <- list(collecNetworks = collecNetworks, M= M, nbNodes = nbNodes)
 
 
-#---------------------- Save and clean environment
-save(connectParamTrue, blockPropTrue, model, emissionDist,mydata,file=whereSaveData)
-
-rm(connectParamTrue)
-rm(blockPropTrue)
-rm(mydata)
-rm(nbNodes)
-rm(M)
-rm(KRow)
-rm(KCol)
 ##############################################################
 #---------- load data
 ##############################################################
-
-load(file=whereSaveData)
-collecNetworks <- mydata$collecNetworks
-M <- mydata$M
-nbNodes <- mydata$nbNodes
-
+ 
 
 
 #--------------- init CollecTau
@@ -114,13 +97,19 @@ LogLikMarg_VB_piCol <- sum(computeLogLikMarg_VB(collecNetworks,resEstimVBEM_piCo
 
 
 whereSaveResEstimVB <- paste0(getwd(),'/Simu/Res/',model,'/VB/resVB_',mySeed,'.Rdata')
-save(initBipartite,estimOptionsVBEM, resEstimVBEM_piCol,estimOptionsVBEM,hyperparamPrior_piCol,file=whereSaveResEstimVB)
+#save(initBipartite,estimOptionsVBEM, resEstimVBEM_piCol,estimOptionsVBEM,hyperparamPrior_piCol,file=whereSaveResEstimVB)
 
 #------------------ Set ApproxPost
 hyperparamApproxPost_piCol <- resEstimVBEM_piCol$hyperparamPost
 hyperparamApproxPost_piCol$collecTau <- resEstimVBEM_piCol$collecTau
 
 #------------------  SMC  - VEM
+
+
+HSample <- rParamZ(MC=1000, hyperparamApproxPost_piCol, emissionDist, model,nbNodes);
+ZSample <-  HSample$ZSample
+MI <- mutualInformationZ(list(HSample$ZSample[[3]]))
+MI
 
 estimOptionsSMC = list()
 estimOptionsSMC$paramsMCMC <- list(nbIterMCMC=2)  
@@ -132,29 +121,6 @@ estimOptionsSMC$op.parallel  <- list(os =  .Platform$OS.type, mc.cores = 1);
 estimOptionsSMC$op.print<- TRUE
 estimOptionsSMC$NB.iter.max  <- Inf # Inf
 estimOptionsSMC$op.SMC.classic <- FALSE
+
 resSMC_VB_piCol <- SMCColBipartiteSBM(data = mydata,hyperparamPrior_piCol,hyperparamApproxPost_piCol, emissionDist, model , estimOptionsSMC)
-
-
-whereSaveResSMC_VB <- paste0(getwd(),'/Simu/Res/',model,'/SMC_VB/resSMC_VB_',mySeed,'.Rdata')
-save(hyperparamApproxPost_piCol, hyperparamPrior_piCol, resSMC_VB_piCol, estimOptionsSMC ,file=whereSaveResSMC_VB)
-
-mutualInformationZ(resSMC_VB_piCol$HSample.0$ZSample)
-mutualInformationZ(resSMC_VB_piCol$HSample_end$ZSample)
-
-####################################################
-#---------------------- SMC classic
-
-####################################################
-rm(hyperparamApproxPost_piCol)
-estimOptionsSMC$op.SMC.classic <- TRUE
-
-
-resSMC_Classic <- SMCColBipartiteSBM(data = mydata,hyperparamPrior,hyperparamApproxPost = NULL, emissionDist, model, estimOptionsSMC)
-
-
-whereSaveResSMC_Classic <- paste0(getwd(),'/Simu/Res/',model,'/SMC_Classic/resSMC_Classique_',mySeed,'.Rdata')
-save(hyperparamApproxPost_piCol, hyperparamPrior_piCol, resSMC_VB_piCol, estimOptionsSMC ,file=whereSaveResSMC_VB)
-
-
-
 

@@ -114,17 +114,17 @@ setHyperparamPrior <- function(M,KRow,KCol,emissionDist, model){
 }
 
 
-###################################### Mutual information
-
-mutualInformationZ  = function(Zsample){
-  if (!is.matrix(Zsample)) {stop('Sample must be a Matrix with M rows if M is the size of the sample')}
-  M <- nrow(Zsample)
-  n <- ncol(Zsample)
-  H.ind <- sum( sapply(1:n,function(i){freq_i = table(Zsample[,i])/M; return(sum(freq_i*log(freq_i)))}))
-  U <- plyr::count(Zsample)$freq/M
-  H.conj <- sum(U * log(U))
-  return(H.conj  - H.ind)
-}
+# ###################################### Mutual information
+# 
+# mutualInformationZ  = function(Zsample){
+#   if (!is.matrix(Zsample)) {stop('Sample must be a Matrix with M rows if M is the size of the sample')}
+#   M <- nrow(Zsample)
+#   n <- ncol(Zsample)
+#   H.ind <- sum( sapply(1:n,function(i){freq_i = table(Zsample[,i])/M; return(sum(freq_i*log(freq_i)))}))
+#   U <- plyr::count(Zsample)$freq/M
+#   H.conj <- sum(U * log(U))
+#   return(H.conj  - H.ind)
+# }
 
 
 
